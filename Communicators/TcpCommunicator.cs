@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -34,11 +35,13 @@ namespace TcpSerialComm.Communicators
         private DateTime _lastReceiveTime = DateTime.MinValue;
         private DateTime _lastWriteTime = DateTime.MinValue;
         private int _reconnectAttempts;
-        private volatile bool _reconnecting;
+        private int _reconnecting;
         private bool _closing;
         private bool _disposed;
         private SynchronizationContext _syncContext;
         private readonly FrameBuilder _frameBuilder;
+        private readonly List<TaskCompletionSource<byte[]>> _pendingReaders = new List<TaskCompletionSource<byte[]>>();
+        private readonly object _pendingLock = new object();
 
         public TcpCommunicatorConfig Config => _cfg;
         public ConnectionState State { get { lock (_stateLock) return _state; } }
@@ -171,6 +174,13 @@ namespace TcpSerialComm.Communicators
                     var frames = _frameBuilder.Push(buf, n);
                     foreach (var f in frames)
                     {
+                        // ===== 双通道分发（核心）=====
+                        // 【拉模式优先】若此刻有代码正在 await ReadAsync() 等待数据，
+                        // 就把这一帧直接塞给它（TryDispatchToWaiter 返回 true），不再走事件，
+                        // 确保"发指令→等回包"的调用能精确拿到对应这一帧。
+                        if (TryDispatchToWaiter(f)) continue;
+                        // 【推模式】没有人在等 → 通过 DataReceived 事件把数据"推"给所有订阅者。
+                        // 适合设备主动上报（无需调用方干预）的场景。
                         var data = f;
                         Post(() => DataReceived?.Invoke(this, new DataReceivedEventArgs(data)));
                     }
@@ -216,15 +226,15 @@ namespace TcpSerialComm.Communicators
         private void ForceDisconnectForReconnect()
         {
             try { _stream?.Dispose(); } catch { }
-            // 读循环会因 stream 关闭而抛异常并触发重连；此处不取消 _masterCts
+            _stream = null;
+            // 读循环会因 stream 关闭/置空而抛异常并触发重连；此处不取消 _masterCts
         }
 
         private void BeginReconnectLoop()
         {
             if (_disposed || _closing) return;
-            if (_reconnecting) return;
+            if (Interlocked.CompareExchange(ref _reconnecting, 1, 0) != 0) return;
             if (_state == ConnectionState.Connected) return;
-            _reconnecting = true;
             SetState(ConnectionState.Reconnecting, "开始自动重连");
             try { _reconnectCts?.Cancel(); } catch { }
             _reconnectCts?.Dispose();
@@ -263,7 +273,7 @@ namespace TcpSerialComm.Communicators
             }
             finally
             {
-                _reconnecting = false;
+                Interlocked.Exchange(ref _reconnecting, 0);
             }
         }
 
@@ -317,6 +327,7 @@ namespace TcpSerialComm.Communicators
             }
             finally
             {
+                CancelPendingReaders();
                 CleanupConnectionObjects();
                 _closing = false;
                 SetState(ConnectionState.Disconnected, "已关闭");
@@ -386,6 +397,58 @@ namespace TcpSerialComm.Communicators
             return false;
         }
 
+        /// <summary>【拉模式】等待并返回下一帧完整数据（请求-响应模式）。无数据且已断开时返回 null。可取消。</summary>
+        public async Task<byte[]> ReadAsync(CancellationToken ct = default)
+        {
+            ThrowIfDisposed();
+            if (_state != ConnectionState.Connected) return null;
+            // 创建一个"未来才拿到数据"的承诺任务，并把自己登记进等待队列 _pendingReaders
+            var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_pendingLock) _pendingReaders.Add(tcs);
+            // 若外部取消（ct），从等待队列移除自己，避免悬挂泄漏
+            using (ct.Register(() =>
+            {
+                lock (_pendingLock) { _pendingReaders.Remove(tcs); }
+                try { tcs.TrySetCanceled(); } catch { }
+            }))
+            {
+                // 阻塞（异步等待）直到读循环把一帧通过 TrySetResult 塞进来，本方法随即返回该帧
+                try { return await tcs.Task.ConfigureAwait(false); }
+                catch (OperationCanceledException) { return null; }
+            }
+        }
+
+        /// <summary>双通道核心：尝试把一帧数据交给正在【拉模式】等待的调用方（ReadAsync）。</summary>
+        private bool TryDispatchToWaiter(byte[] frame)
+        {
+            TaskCompletionSource<byte[]> waiter = null;
+            lock (_pendingLock)
+            {
+                // 取等待队列中第一个（FIFO：先等先得）的 ReadAsync 调用
+                if (_pendingReaders.Count > 0)
+                {
+                    waiter = _pendingReaders[0];
+                    _pendingReaders.RemoveAt(0);
+                }
+            }
+            if (waiter != null)
+            {
+                // 把这一帧交给它 → 对应的 ReadAsync 立即返回该帧
+                waiter.TrySetResult(frame);
+                return true;   // 已交付，调用方不再走事件推送
+            }
+            return false;
+        }
+
+        private void CancelPendingReaders()
+        {
+            lock (_pendingLock)
+            {
+                foreach (var w in _pendingReaders) { try { w.TrySetCanceled(); } catch { } }
+                _pendingReaders.Clear();
+            }
+        }
+
         public void Dispose()
         {
             if (_disposed) return;
@@ -402,6 +465,7 @@ namespace TcpSerialComm.Communicators
             catch { }
             finally
             {
+                CancelPendingReaders();
                 CleanupConnectionObjects();
                 _writeLock?.Dispose();
                 _heartbeatTimer?.Dispose();

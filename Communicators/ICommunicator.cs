@@ -15,5 +15,7 @@ namespace TcpSerialComm.Communicators
         Task OpenAsync(CancellationToken ct = default);
         Task CloseAsync(CancellationToken ct = default);
         Task<bool> WriteAsync(byte[] data, CancellationToken ct = default);
+        /// <summary>等待下一帧完整数据（请求-响应模式）。已断开或无数据时返回 null。可取消。</summary>
+        Task<byte[]> ReadAsync(CancellationToken ct = default);
     }
 }
