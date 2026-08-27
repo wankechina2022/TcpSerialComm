@@ -32,13 +32,44 @@ namespace TcpSerialComm.Communicators
         public bool AppendDelimiterOnWrite { get; set; } = true;
         /// <summary>接收缓冲大小</summary>
         public int ReceiveBufferSize { get; set; } = 4096;
+        /// <summary>接收组帧缓冲上限(字节)，防止对端不发分隔符/畸形流导致内存无限增长；0=不限制</summary>
+        public int MaxFrameBufferBytes { get; set; } = 1048576;
+
+        /// <summary>
+        /// 按当前 Framing 模式封装“发送负载”：
+        ///  - LengthPrefix：前置 2 字节小端长度头（不含头本身）；
+        ///  - Delimiter 且 AppendDelimiterOnWrite：末尾追加 FrameDelimiter（行协议结束符）；
+        ///  - 其它：原样返回。
+        /// WriteAsync 与心跳统一走此方法，保证发送端与接收端 FrameBuilder 组帧对称。
+        /// </summary>
+        public byte[] BuildSendPayload(byte[] data)
+        {
+            if (data == null) return new byte[0];
+            if (Framing == FramingMode.LengthPrefix)
+            {
+                var p = new byte[data.Length + 2];
+                p[0] = (byte)(data.Length & 0xFF);
+                p[1] = (byte)((data.Length >> 8) & 0xFF);
+                Array.Copy(data, 0, p, 2, data.Length);
+                return p;
+            }
+            if (AppendDelimiterOnWrite && Framing == FramingMode.Delimiter
+                && FrameDelimiter != null && FrameDelimiter.Length > 0)
+            {
+                var p = new byte[data.Length + FrameDelimiter.Length];
+                Array.Copy(data, 0, p, 0, data.Length);
+                Array.Copy(FrameDelimiter, 0, p, data.Length, FrameDelimiter.Length);
+                return p;
+            }
+            return (byte[])data.Clone();
+        }
         /// <summary>是否启用心跳 + 看门狗</summary>
         public bool HeartbeatEnabled { get; set; } = false;
         /// <summary>心跳发送间隔(ms)</summary>
         public int HeartbeatIntervalMs { get; set; } = 30000;
         /// <summary>看门狗：超过该静默毫秒数判定断线(ms)</summary>
         public int HeartbeatSilenceTimeoutMs { get; set; } = 15000;
-        /// <summary>心跳请求报文（不含分隔符，发送时由 AppendDelimiterOnWrite 统一补结束符）</summary>
+        /// <summary>心跳请求报文（发送时由 BuildSendPayload 按当前 Framing 模式统一封装：Delimiter 补结束符 / LengthPrefix 加长度头）</summary>
         public byte[] HeartbeatRequest { get; set; } = System.Text.Encoding.ASCII.GetBytes("PING");
         /// <summary>写入失败重试次数</summary>
         public int WriteRetryCount { get; set; } = 3;

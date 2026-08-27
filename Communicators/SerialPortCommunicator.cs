@@ -29,8 +29,9 @@ namespace TcpSerialComm.Communicators
         private DateTime _lastWriteTime = DateTime.MinValue;
         private int _reconnectAttempts;
         private int _reconnecting;
-        private bool _closing;
-        private bool _disposed;
+        private int _openInProgress;
+        private volatile bool _closing;
+        private volatile bool _disposed;
         private SynchronizationContext _syncContext;
         private readonly FrameBuilder _frameBuilder;
         private readonly List<TaskCompletionSource<byte[]>> _pendingReaders = new List<TaskCompletionSource<byte[]>>();
@@ -50,7 +51,7 @@ namespace TcpSerialComm.Communicators
         {
             _cfg = config ?? throw new ArgumentNullException(nameof(config));
             // 注意：PortName 由调用方在 Open 前设置（运行时选择），此处不强制非空
-            _frameBuilder = new FrameBuilder(_cfg.Framing, _cfg.FrameDelimiter);
+            _frameBuilder = new FrameBuilder(_cfg.Framing, _cfg.FrameDelimiter, _cfg.MaxFrameBufferBytes);
             _heartbeatTimer = new System.Timers.Timer { AutoReset = true };
             _heartbeatTimer.Elapsed += HeartbeatTick;
         }
@@ -81,6 +82,8 @@ namespace TcpSerialComm.Communicators
                 if (old == newState) return;
                 _state = newState;
             }
+            // 状态离开"已连接"时，唤醒所有在 ReadAsync 上等待的调用方（否则断线期间会永久挂死）
+            if (newState != ConnectionState.Connected) CancelPendingReaders();
             var e = new ConnectionStateChangedEventArgs(old, newState, msg);
             Post(() => StateChanged?.Invoke(this, e));
         }
@@ -106,6 +109,8 @@ namespace TcpSerialComm.Communicators
                     RtsEnable = _cfg.RtsEnable,
                     DtrEnable = _cfg.DtrEnable
                 };
+                // 注意：SerialPort.ReadTimeout/WriteTimeout 仅对同步 Read/Write 生效，本类读循环使用
+                // BaseStream.ReadAsync 异步读，因此该超时对异步读不生效。串口读不依赖此超时（断开靠流释放/看门狗检测）。
                 if (_cfg.ReadTimeout > 0) port.ReadTimeout = _cfg.ReadTimeout;
                 if (_cfg.WriteTimeout > 0) port.WriteTimeout = _cfg.WriteTimeout;
                 port.Open();
@@ -265,6 +270,12 @@ namespace TcpSerialComm.Communicators
         public async Task OpenAsync(CancellationToken ct = default)
         {
             ThrowIfDisposed();
+            // 安全约定3：串口不允许二次连接。用 Interlocked 原子抢锁，消除 "检查-再设" 竞态（TOCTOU），
+            // 防止两个并发 Open 都通过 IsActive 检查后建出双连接。
+            if (Interlocked.CompareExchange(ref _openInProgress, 1, 0) != 0)
+                throw new InvalidOperationException("禁止并发打开：已有打开/连接操作正在进行中。");
+            try
+            {
             _reconnectAttempts = 0;  // 每次手动重开都重置重连计数，避免沿用上次失败计数
             // 安全约定3：串口不允许二次连接（重复 Open 会抛异常）
             if (IsActive) throw new InvalidOperationException("禁止二次连接：设备已连接或正在连接/重连中。");
@@ -286,6 +297,11 @@ namespace TcpSerialComm.Communicators
             {
                 SetState(ConnectionState.Disconnected, "连接失败");
                 throw new InvalidOperationException($"串口 {_cfg.PortName} 打开失败，且未启用自动重连。");
+            }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _openInProgress, 0);
             }
         }
 
@@ -330,15 +346,8 @@ namespace TcpSerialComm.Communicators
             await _writeLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                // 行协议：发送时在负载末尾自动追加分隔符（回车换行等）
-                byte[] payload = data;
-                if (_cfg.AppendDelimiterOnWrite && _cfg.Framing == FramingMode.Delimiter
-                    && _cfg.FrameDelimiter != null && _cfg.FrameDelimiter.Length > 0)
-                {
-                    payload = new byte[data.Length + _cfg.FrameDelimiter.Length];
-                    Array.Copy(data, 0, payload, 0, data.Length);
-                    Array.Copy(_cfg.FrameDelimiter, 0, payload, data.Length, _cfg.FrameDelimiter.Length);
-                }
+                // 按当前 Framing 模式封装发送负载（Delimiter 补结束符 / LengthPrefix 加长度头 / 其它原样）
+                byte[] payload = _cfg.BuildSendPayload(data);
 
                 var since = (DateTime.UtcNow - _lastWriteTime).TotalMilliseconds;
                 if (since < _cfg.WriteMinIntervalMs)
@@ -431,22 +440,17 @@ namespace TcpSerialComm.Communicators
         public void Dispose()
         {
             if (_disposed) return;
-            _disposed = true;
-            _closing = true;
             try
             {
-                _heartbeatTimer.Stop();
-                try { _reconnectCts?.Cancel(); } catch { }
-                try { _masterCts?.Cancel(); } catch { }
-                try { ForceDisconnectForReconnect(); } catch { }  // 强制解除阻塞读
-                try { _readTask?.Wait(500); } catch { }
-                try { _reconnectTask?.Wait(500); } catch { }
+                // 复用 CloseAsync 完成连接关闭（含等待读/重连循环退出、释放底层流），最多等 2s。
+                // 必须在设置 _disposed 之前调用，否则 CloseAsync 会因 ThrowIfDisposed 直接抛异常。
+                try { CloseAsync().Wait(2000); } catch { }
             }
-            catch { }
             finally
             {
-                CancelPendingReaders();
-                CleanupConnectionObjects();
+                _disposed = true;
+                try { CancelPendingReaders(); } catch { }   // 兜底唤醒残留等待者
+                try { CleanupConnectionObjects(); } catch { }
                 _writeLock?.Dispose();
                 _heartbeatTimer?.Dispose();
                 _masterCts?.Dispose();

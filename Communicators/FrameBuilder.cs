@@ -11,13 +11,15 @@ namespace TcpSerialComm.Communicators
     {
         private readonly FramingMode _mode;
         private readonly byte[] _delimiter;
+        private readonly int _maxBufferBytes;
         private readonly List<byte> _buffer = new List<byte>();
         private readonly object _lock = new object();
 
-        public FrameBuilder(FramingMode mode, byte[] delimiter)
+        public FrameBuilder(FramingMode mode, byte[] delimiter, int maxBufferBytes = 0)
         {
             _mode = mode;
             _delimiter = delimiter ?? new byte[0];
+            _maxBufferBytes = maxBufferBytes;
         }
 
         /// <summary>推入一段原始数据，返回本次可以交付的完整帧（不足一帧的剩余部分保留）</summary>
@@ -28,6 +30,13 @@ namespace TcpSerialComm.Communicators
             lock (_lock)
             {
                 for (int i = 0; i < count; i++) _buffer.Add(chunk[i]);
+
+                // 畸形流防御：对端迟迟不发分隔符/长度头导致缓冲无限增长时，清零重置避免 OOM
+                if (_maxBufferBytes > 0 && _buffer.Count > _maxBufferBytes)
+                {
+                    _buffer.Clear();
+                    return frames;
+                }
 
                 if (_mode == FramingMode.Raw || _delimiter.Length == 0)
                 {
