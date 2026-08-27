@@ -152,6 +152,7 @@ namespace TcpSerialComm.Communicators
 
         private void StartReadLoop()
         {
+            try { _masterCts?.Dispose(); } catch { }  // 释放上一次遗留的 CTS（重连/重开场景），避免泄漏
             _masterCts = new CancellationTokenSource();
             var token = _masterCts.Token;
             _readTask = Task.Run(async () => { await ReadLoopAsync(token).ConfigureAwait(false); }, token);
@@ -189,6 +190,8 @@ namespace TcpSerialComm.Communicators
             catch (OperationCanceledException) { /* 正常退出 */ }
             catch (Exception ex)
             {
+                // 正常关闭/释放导致的异常静默处理，不刷错误日志
+                if (_closing || _disposed) return;
                 Post(() => Error?.Invoke(this, new CommunicatorErrorEventArgs(ex, "Read")));
             }
 
@@ -288,6 +291,7 @@ namespace TcpSerialComm.Communicators
         public async Task OpenAsync(CancellationToken ct = default)
         {
             ThrowIfDisposed();
+            _reconnectAttempts = 0;  // 每次手动重开都重置重连计数，避免沿用上次失败计数
             // 安全约定3：硬件不允许二次连接
             if (IsActive) throw new InvalidOperationException("禁止二次连接：设备已连接或正在连接/重连中。");
             _closing = false;
@@ -322,8 +326,10 @@ namespace TcpSerialComm.Communicators
                 _heartbeatTimer.Stop();
                 try { _reconnectCts?.Cancel(); } catch { }
                 try { _masterCts?.Cancel(); } catch { }
-                if (_readTask != null) { try { await _readTask.ConfigureAwait(false); } catch { } }
-                if (_reconnectTask != null) { try { await _reconnectTask.ConfigureAwait(false); } catch { } }
+                // 取消令牌未必能中断阻塞中的 socket 读，主动释放底层流强制解除阻塞
+                try { ForceDisconnectForReconnect(); } catch { }
+                if (_readTask != null) { try { await Task.WhenAny(_readTask, Task.Delay(2000)).ConfigureAwait(false); } catch { } }
+                if (_reconnectTask != null) { try { await Task.WhenAny(_reconnectTask, Task.Delay(2000)).ConfigureAwait(false); } catch { } }
             }
             finally
             {
@@ -459,6 +465,7 @@ namespace TcpSerialComm.Communicators
                 _heartbeatTimer.Stop();
                 try { _reconnectCts?.Cancel(); } catch { }
                 try { _masterCts?.Cancel(); } catch { }
+                try { ForceDisconnectForReconnect(); } catch { }  // 强制解除阻塞读
                 try { _readTask?.Wait(500); } catch { }
                 try { _reconnectTask?.Wait(500); } catch { }
             }
