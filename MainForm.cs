@@ -9,9 +9,10 @@ using TcpSerialComm.Communicators;
 namespace TcpSerialComm
 {
     /// <summary>
-    /// 测试主窗体：仅用于验证两个通信类的读写/重连。
-    /// 严格落实安全约定：单实例、防二次连接、发送防重复点击、退出前关闭设备、清空等危险操作确认。
-    /// 新增「连接参数」面板：常用配置在界面可见可改，连接后锁定。
+    /// Test main form: used solely to exercise the read/write and reconnect behavior of the two communicator classes.
+    /// Implements the safety rules: single instance, no duplicate connect, no double-click on send, closing the
+    /// device on exit, and confirmation prompts for risky actions such as clearing the log.
+    /// Also hosts the "Connection parameters" panel so common settings are visible and editable, then locked while connected.
     /// </summary>
     public sealed class MainForm : Form
     {
@@ -26,7 +27,7 @@ namespace TcpSerialComm
         private Button btnSerialConnect, btnSerialDisconnect, btnSerialSend, btnClearLog;
         private Label lblTcpStatus, lblSerialStatus;
 
-        // 公共参数面板控件
+        // Common parameter panel controls.
         private GroupBox gbParam;
         private CheckBox chkAutoReconnect, chkHeartbeat;
         private TextBox txtMaxRetry, txtReconnectBase, txtReconnectMax;
@@ -43,124 +44,124 @@ namespace TcpSerialComm
 
         private void InitializeComponent()
         {
-            Text = "TCP / 串口 读写测试工具";
-            ClientSize = new System.Drawing.Size(660, 540);
+            Text = "TCP / Serial Read-Write Test Tool";
+            ClientSize = new System.Drawing.Size(660, 550);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
 
-            // ---- TCP 组 ----
-            var gbTcp = new GroupBox { Text = "TCP 客户端", Location = new System.Drawing.Point(12, 12), Size = new System.Drawing.Size(300, 150) };
+            // ---- TCP group ----
+            var gbTcp = new GroupBox { Text = "TCP Client", Location = new System.Drawing.Point(12, 12), Size = new System.Drawing.Size(300, 180) };
             gbTcp.Controls.Add(new Label { Text = "IP:", Location = new System.Drawing.Point(12, 24), AutoSize = true });
-            txtIp = new TextBox { Text = "127.0.0.1", Location = new System.Drawing.Point(48, 21), Size = new System.Drawing.Size(120, 23) };
+            txtIp = new TextBox { Text = "127.0.0.1", Location = new System.Drawing.Point(45, 21), Size = new System.Drawing.Size(120, 23) };
             gbTcp.Controls.Add(txtIp);
-            gbTcp.Controls.Add(new Label { Text = "端口:", Location = new System.Drawing.Point(178, 24), AutoSize = true });
-            txtPort = new TextBox { Text = "502", Location = new System.Drawing.Point(220, 21), Size = new System.Drawing.Size(60, 23) };
+            gbTcp.Controls.Add(new Label { Text = "Port:", Location = new System.Drawing.Point(172, 24), AutoSize = true });
+            txtPort = new TextBox { Text = "502", Location = new System.Drawing.Point(210, 21), Size = new System.Drawing.Size(60, 23) };
             gbTcp.Controls.Add(txtPort);
 
-            btnTcpConnect = new Button { Text = "连接", Location = new System.Drawing.Point(12, 56), Size = new System.Drawing.Size(80, 28) };
-            btnTcpDisconnect = new Button { Text = "断开", Location = new System.Drawing.Point(100, 56), Size = new System.Drawing.Size(80, 28), Enabled = false };
-            lblTcpStatus = new Label { Text = "状态: 未连接", Location = new System.Drawing.Point(188, 60), AutoSize = true };
+            btnTcpConnect = new Button { Text = "Connect", Location = new System.Drawing.Point(12, 56), Size = new System.Drawing.Size(80, 28) };
+            btnTcpDisconnect = new Button { Text = "Disconnect", Location = new System.Drawing.Point(100, 56), Size = new System.Drawing.Size(88, 28), Enabled = false };
+            lblTcpStatus = new Label { Text = "State: Disconnected", Location = new System.Drawing.Point(12, 90), AutoSize = true };
             gbTcp.Controls.Add(btnTcpConnect);
             gbTcp.Controls.Add(btnTcpDisconnect);
             gbTcp.Controls.Add(lblTcpStatus);
 
-            gbTcp.Controls.Add(new Label { Text = "发送:", Location = new System.Drawing.Point(12, 96), AutoSize = true });
-            txtTcpSend = new TextBox { Location = new System.Drawing.Point(48, 93), Size = new System.Drawing.Size(160, 23) };
-            cboTcpType = new ComboBox { Location = new System.Drawing.Point(216, 93), Size = new System.Drawing.Size(70, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            gbTcp.Controls.Add(new Label { Text = "Send:", Location = new System.Drawing.Point(12, 124), AutoSize = true });
+            txtTcpSend = new TextBox { Location = new System.Drawing.Point(55, 121), Size = new System.Drawing.Size(155, 23) };
+            cboTcpType = new ComboBox { Location = new System.Drawing.Point(216, 121), Size = new System.Drawing.Size(70, 23), DropDownStyle = ComboBoxStyle.DropDownList };
             cboTcpType.Items.AddRange(new object[] { "Text", "Hex" });
             cboTcpType.SelectedIndex = 0;
             gbTcp.Controls.Add(txtTcpSend);
             gbTcp.Controls.Add(cboTcpType);
-            btnTcpSend = new Button { Text = "发送", Location = new System.Drawing.Point(12, 124), Size = new System.Drawing.Size(80, 28), Enabled = false };
+            btnTcpSend = new Button { Text = "Send", Location = new System.Drawing.Point(12, 152), Size = new System.Drawing.Size(80, 28), Enabled = false };
             gbTcp.Controls.Add(btnTcpSend);
 
-            // ---- 串口组 ----
-            var gbSer = new GroupBox { Text = "串口", Location = new System.Drawing.Point(324, 12), Size = new System.Drawing.Size(300, 150) };
-            gbSer.Controls.Add(new Label { Text = "端口:", Location = new System.Drawing.Point(12, 24), AutoSize = true });
-            cboPort = new ComboBox { Location = new System.Drawing.Point(48, 21), Size = new System.Drawing.Size(100, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            // ---- Serial group ----
+            var gbSer = new GroupBox { Text = "Serial Port", Location = new System.Drawing.Point(324, 12), Size = new System.Drawing.Size(300, 180) };
+            gbSer.Controls.Add(new Label { Text = "Port:", Location = new System.Drawing.Point(12, 24), AutoSize = true });
+            cboPort = new ComboBox { Location = new System.Drawing.Point(45, 21), Size = new System.Drawing.Size(95, 23), DropDownStyle = ComboBoxStyle.DropDownList };
             gbSer.Controls.Add(cboPort);
-            gbSer.Controls.Add(new Label { Text = "波特率:", Location = new System.Drawing.Point(156, 24), AutoSize = true });
-            cboBaud = new ComboBox { Location = new System.Drawing.Point(206, 21), Size = new System.Drawing.Size(80, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            gbSer.Controls.Add(new Label { Text = "Baud:", Location = new System.Drawing.Point(150, 24), AutoSize = true });
+            cboBaud = new ComboBox { Location = new System.Drawing.Point(190, 21), Size = new System.Drawing.Size(80, 23), DropDownStyle = ComboBoxStyle.DropDownList };
             cboBaud.Items.AddRange(new object[] { "9600", "19200", "38400", "57600", "115200" });
             cboBaud.SelectedIndex = 0;
             gbSer.Controls.Add(cboBaud);
 
-            btnSerialConnect = new Button { Text = "连接", Location = new System.Drawing.Point(12, 56), Size = new System.Drawing.Size(80, 28) };
-            btnSerialDisconnect = new Button { Text = "断开", Location = new System.Drawing.Point(100, 56), Size = new System.Drawing.Size(80, 28), Enabled = false };
-            lblSerialStatus = new Label { Text = "状态: 未连接", Location = new System.Drawing.Point(188, 60), AutoSize = true };
+            btnSerialConnect = new Button { Text = "Connect", Location = new System.Drawing.Point(12, 56), Size = new System.Drawing.Size(80, 28) };
+            btnSerialDisconnect = new Button { Text = "Disconnect", Location = new System.Drawing.Point(100, 56), Size = new System.Drawing.Size(88, 28), Enabled = false };
+            lblSerialStatus = new Label { Text = "State: Disconnected", Location = new System.Drawing.Point(12, 90), AutoSize = true };
             gbSer.Controls.Add(btnSerialConnect);
             gbSer.Controls.Add(btnSerialDisconnect);
             gbSer.Controls.Add(lblSerialStatus);
 
-            gbSer.Controls.Add(new Label { Text = "发送:", Location = new System.Drawing.Point(12, 96), AutoSize = true });
-            txtSerialSend = new TextBox { Location = new System.Drawing.Point(48, 93), Size = new System.Drawing.Size(150, 23) };
-            cboSerialType = new ComboBox { Location = new System.Drawing.Point(206, 93), Size = new System.Drawing.Size(70, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            gbSer.Controls.Add(new Label { Text = "Send:", Location = new System.Drawing.Point(12, 124), AutoSize = true });
+            txtSerialSend = new TextBox { Location = new System.Drawing.Point(55, 121), Size = new System.Drawing.Size(155, 23) };
+            cboSerialType = new ComboBox { Location = new System.Drawing.Point(216, 121), Size = new System.Drawing.Size(70, 23), DropDownStyle = ComboBoxStyle.DropDownList };
             cboSerialType.Items.AddRange(new object[] { "Text", "Hex" });
             cboSerialType.SelectedIndex = 0;
             gbSer.Controls.Add(txtSerialSend);
             gbSer.Controls.Add(cboSerialType);
-            btnSerialSend = new Button { Text = "发送", Location = new System.Drawing.Point(12, 124), Size = new System.Drawing.Size(80, 28), Enabled = false };
+            btnSerialSend = new Button { Text = "Send", Location = new System.Drawing.Point(12, 152), Size = new System.Drawing.Size(80, 28), Enabled = false };
             gbSer.Controls.Add(btnSerialSend);
 
-            // ---- 公共连接参数面板 ----
-            gbParam = new GroupBox { Text = "连接参数（连接前可改，连接后自动锁定）", Location = new System.Drawing.Point(12, 170), Size = new System.Drawing.Size(636, 150) };
+            // ---- Common connection parameter panel ----
+            gbParam = new GroupBox { Text = "Connection parameters (editable before connecting, locked while connected)", Location = new System.Drawing.Point(12, 200), Size = new System.Drawing.Size(636, 150) };
 
-            chkAutoReconnect = new CheckBox { Text = "自动重连", Location = new System.Drawing.Point(12, 20), AutoSize = true, Checked = true };
+            chkAutoReconnect = new CheckBox { Text = "Auto reconnect", Location = new System.Drawing.Point(12, 20), AutoSize = true, Checked = true };
             gbParam.Controls.Add(chkAutoReconnect);
-            gbParam.Controls.Add(new Label { Text = "重连上限", Location = new System.Drawing.Point(110, 24), AutoSize = true });
-            txtMaxRetry = new TextBox { Text = "0", Location = new System.Drawing.Point(170, 20), Size = new System.Drawing.Size(42, 23) };
+            gbParam.Controls.Add(new Label { Text = "Max retries:", Location = new System.Drawing.Point(116, 24), AutoSize = true });
+            txtMaxRetry = new TextBox { Text = "0", Location = new System.Drawing.Point(194, 20), Size = new System.Drawing.Size(40, 23) };
             gbParam.Controls.Add(txtMaxRetry);
-            gbParam.Controls.Add(new Label { Text = "次 (0=无限)", Location = new System.Drawing.Point(216, 24), AutoSize = true });
-            gbParam.Controls.Add(new Label { Text = "重连间隔", Location = new System.Drawing.Point(300, 24), AutoSize = true });
-            txtReconnectBase = new TextBox { Text = "1000", Location = new System.Drawing.Point(360, 20), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "(0 = unlimited)", Location = new System.Drawing.Point(238, 24), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "Backoff:", Location = new System.Drawing.Point(350, 24), AutoSize = true });
+            txtReconnectBase = new TextBox { Text = "1000", Location = new System.Drawing.Point(404, 20), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtReconnectBase);
-            gbParam.Controls.Add(new Label { Text = "最大", Location = new System.Drawing.Point(415, 24), AutoSize = true });
-            txtReconnectMax = new TextBox { Text = "30000", Location = new System.Drawing.Point(455, 20), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "max", Location = new System.Drawing.Point(458, 24), AutoSize = true });
+            txtReconnectMax = new TextBox { Text = "30000", Location = new System.Drawing.Point(492, 20), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtReconnectMax);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(510, 24), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(546, 24), AutoSize = true });
 
-            gbParam.Controls.Add(new Label { Text = "帧结束符", Location = new System.Drawing.Point(12, 56), AutoSize = true });
-            cboDelimiter = new ComboBox { Location = new System.Drawing.Point(75, 52), Size = new System.Drawing.Size(96, 23), DropDownStyle = ComboBoxStyle.DropDownList };
-            cboDelimiter.Items.AddRange(new object[] { "CRLF (\\r\\n)", "LF (\\n)", "无" });
+            gbParam.Controls.Add(new Label { Text = "Frame end", Location = new System.Drawing.Point(12, 56), AutoSize = true });
+            cboDelimiter = new ComboBox { Location = new System.Drawing.Point(80, 52), Size = new System.Drawing.Size(110, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            cboDelimiter.Items.AddRange(new object[] { "CRLF (\\r\\n)", "LF (\\n)", "None" });
             cboDelimiter.SelectedIndex = 0;
             gbParam.Controls.Add(cboDelimiter);
-            gbParam.Controls.Add(new Label { Text = "最小写间隔", Location = new System.Drawing.Point(185, 56), AutoSize = true });
-            txtWriteMin = new TextBox { Text = "20", Location = new System.Drawing.Point(255, 52), Size = new System.Drawing.Size(42, 23) };
+            gbParam.Controls.Add(new Label { Text = "Min write gap", Location = new System.Drawing.Point(198, 56), AutoSize = true });
+            txtWriteMin = new TextBox { Text = "20", Location = new System.Drawing.Point(287, 52), Size = new System.Drawing.Size(42, 23) };
             gbParam.Controls.Add(txtWriteMin);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(302, 56), AutoSize = true });
-            gbParam.Controls.Add(new Label { Text = "写重试", Location = new System.Drawing.Point(340, 56), AutoSize = true });
-            txtWriteRetry = new TextBox { Text = "3", Location = new System.Drawing.Point(388, 52), Size = new System.Drawing.Size(36, 23) };
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(333, 56), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "Write retry", Location = new System.Drawing.Point(370, 56), AutoSize = true });
+            txtWriteRetry = new TextBox { Text = "3", Location = new System.Drawing.Point(444, 52), Size = new System.Drawing.Size(36, 23) };
             gbParam.Controls.Add(txtWriteRetry);
-            gbParam.Controls.Add(new Label { Text = "次 / 间隔", Location = new System.Drawing.Point(428, 56), AutoSize = true });
-            txtWriteRetryInt = new TextBox { Text = "30", Location = new System.Drawing.Point(490, 52), Size = new System.Drawing.Size(42, 23) };
+            gbParam.Controls.Add(new Label { Text = "x / gap", Location = new System.Drawing.Point(484, 56), AutoSize = true });
+            txtWriteRetryInt = new TextBox { Text = "30", Location = new System.Drawing.Point(536, 52), Size = new System.Drawing.Size(42, 23) };
             gbParam.Controls.Add(txtWriteRetryInt);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(537, 56), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(582, 56), AutoSize = true });
 
-            chkHeartbeat = new CheckBox { Text = "心跳", Location = new System.Drawing.Point(12, 82), AutoSize = true, Checked = false };
+            chkHeartbeat = new CheckBox { Text = "Heartbeat", Location = new System.Drawing.Point(12, 82), AutoSize = true, Checked = false };
             gbParam.Controls.Add(chkHeartbeat);
-            gbParam.Controls.Add(new Label { Text = "间隔", Location = new System.Drawing.Point(70, 86), AutoSize = true });
-            txtHeartbeatInt = new TextBox { Text = "30000", Location = new System.Drawing.Point(105, 82), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "interval", Location = new System.Drawing.Point(90, 86), AutoSize = true });
+            txtHeartbeatInt = new TextBox { Text = "30000", Location = new System.Drawing.Point(139, 82), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtHeartbeatInt);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(160, 86), AutoSize = true });
-            gbParam.Controls.Add(new Label { Text = "静默超时", Location = new System.Drawing.Point(215, 86), AutoSize = true });
-            txtSilence = new TextBox { Text = "15000", Location = new System.Drawing.Point(280, 82), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(193, 86), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "Silence timeout", Location = new System.Drawing.Point(230, 86), AutoSize = true });
+            txtSilence = new TextBox { Text = "15000", Location = new System.Drawing.Point(329, 82), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtSilence);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(335, 86), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(383, 86), AutoSize = true });
 
-            // ---- 日志组 ----
-            var gbLog = new GroupBox { Text = "接收 / 日志", Location = new System.Drawing.Point(12, 330), Size = new System.Drawing.Size(636, 180) };
+            // ---- Log group ----
+            var gbLog = new GroupBox { Text = "Receive / Log", Location = new System.Drawing.Point(12, 360), Size = new System.Drawing.Size(636, 175) };
             txtLog = new TextBox
             {
                 Location = new System.Drawing.Point(12, 22),
-                Size = new System.Drawing.Size(612, 120),
+                Size = new System.Drawing.Size(612, 112),
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
                 Font = new System.Drawing.Font("Consolas", 9f)
             };
             gbLog.Controls.Add(txtLog);
-            btnClearLog = new Button { Text = "清空日志", Location = new System.Drawing.Point(534, 148), Size = new System.Drawing.Size(90, 28) };
+            btnClearLog = new Button { Text = "Clear log", Location = new System.Drawing.Point(534, 140), Size = new System.Drawing.Size(90, 28) };
             gbLog.Controls.Add(btnClearLog);
 
             Controls.Add(gbTcp);
@@ -187,10 +188,10 @@ namespace TcpSerialComm
                 Framing = FramingMode.Delimiter,
                 WriteMinIntervalMs = 20
             });
-            _tcp.SyncContext = SynchronizationContext.Current; // 事件回到 UI 线程
+            _tcp.SyncContext = SynchronizationContext.Current; // Marshal events back to the UI thread.
             _tcp.StateChanged += (s, e) => OnTcpStateChanged(e);
-            _tcp.DataReceived += (s, e) => Log("[TCP 收到] " + FormatData(e.Data));
-            _tcp.Error += (s, e) => Log($"[TCP 错误/{e.Operation}] {e.Exception?.GetType().Name}: {e.Exception?.Message}");
+            _tcp.DataReceived += (s, e) => Log("[TCP RX] " + FormatData(e.Data));
+            _tcp.Error += (s, e) => Log($"[TCP ERROR/{e.Operation}] {e.Exception?.GetType().Name}: {e.Exception?.Message}");
 
             _serial = new SerialPortCommunicator(new SerialPortCommunicatorConfig
             {
@@ -201,11 +202,11 @@ namespace TcpSerialComm
             });
             _serial.SyncContext = SynchronizationContext.Current;
             _serial.StateChanged += (s, e) => OnSerialStateChanged(e);
-            _serial.DataReceived += (s, e) => Log("[串口 收到] " + FormatData(e.Data));
-            _serial.Error += (s, e) => Log($"[串口 错误/{e.Operation}] {e.Exception?.GetType().Name}: {e.Exception?.Message}");
+            _serial.DataReceived += (s, e) => Log("[SERIAL RX] " + FormatData(e.Data));
+            _serial.Error += (s, e) => Log($"[SERIAL ERROR/{e.Operation}] {e.Exception?.GetType().Name}: {e.Exception?.Message}");
         }
 
-        /// <summary>把参数面板上的值写入两个通信类的配置（连接前调用）</summary>
+        /// <summary>Copies the values from the parameter panel into both communicators' configuration (called before connecting).</summary>
         private void ApplyConfigFromUI()
         {
             byte[] delim = DelimiterFromCombo();
@@ -232,10 +233,10 @@ namespace TcpSerialComm
             string s = cboDelimiter.SelectedItem?.ToString() ?? "CRLF";
             if (s.StartsWith("CRLF")) return new byte[] { (byte)'\r', (byte)'\n' };
             if (s.StartsWith("LF")) return new byte[] { (byte)'\n' };
-            return new byte[0]; // 无结束符 -> Raw
+            return new byte[0]; // No terminator -> Raw.
         }
 
-        /// <summary>任一设备处于活动/过渡状态时锁定参数面板，全部断开后解锁</summary>
+        /// <summary>Locks the parameter panel while either device is active or in transition, and unlocks it once both are disconnected.</summary>
         private void UpdateConfigPanelLock()
         {
             bool lockPanel = IsBusy(_tcp.State) || IsBusy(_serial.State);
@@ -254,7 +255,7 @@ namespace TcpSerialComm
 
         private static string FormatData(byte[] data)
         {
-            if (data == null || data.Length == 0) return "(空)";
+            if (data == null || data.Length == 0) return "(empty)";
             bool printable = true;
             foreach (byte b in data)
             {
@@ -265,79 +266,79 @@ namespace TcpSerialComm
 
         private void OnTcpStateChanged(ConnectionStateChangedEventArgs e)
         {
-            lblTcpStatus.Text = "状态: " + StateText(e.NewState);
+            lblTcpStatus.Text = "State: " + StateText(e.NewState);
             bool connected = e.NewState == ConnectionState.Connected;
             bool busy = e.NewState == ConnectionState.Connecting || e.NewState == ConnectionState.Reconnecting;
             btnTcpConnect.Enabled = !connected && !busy;
             btnTcpDisconnect.Enabled = connected || e.NewState == ConnectionState.Reconnecting;
             btnTcpSend.Enabled = connected;
-            Log($"[TCP] 状态: {StateText(e.OldState)} -> {StateText(e.NewState)}{(e.Message == null ? "" : " (" + e.Message + ")")}");
+            Log($"[TCP] State: {StateText(e.OldState)} -> {StateText(e.NewState)}{(e.Message == null ? "" : " (" + e.Message + ")")}");
             UpdateConfigPanelLock();
         }
 
         private void OnSerialStateChanged(ConnectionStateChangedEventArgs e)
         {
-            lblSerialStatus.Text = "状态: " + StateText(e.NewState);
+            lblSerialStatus.Text = "State: " + StateText(e.NewState);
             bool connected = e.NewState == ConnectionState.Connected;
             bool busy = e.NewState == ConnectionState.Connecting || e.NewState == ConnectionState.Reconnecting;
             btnSerialConnect.Enabled = !connected && !busy;
             btnSerialDisconnect.Enabled = connected || e.NewState == ConnectionState.Reconnecting;
             btnSerialSend.Enabled = connected;
-            Log($"[串口] 状态: {StateText(e.OldState)} -> {StateText(e.NewState)}{(e.Message == null ? "" : " (" + e.Message + ")")}");
+            Log($"[SERIAL] State: {StateText(e.OldState)} -> {StateText(e.NewState)}{(e.Message == null ? "" : " (" + e.Message + ")")}");
             UpdateConfigPanelLock();
         }
 
         private static string StateText(ConnectionState s) => s switch
         {
-            ConnectionState.Disconnected => "未连接",
-            ConnectionState.Connecting => "连接中",
-            ConnectionState.Connected => "已连接",
-            ConnectionState.Reconnecting => "重连中",
-            ConnectionState.Disconnecting => "断开中",
-            ConnectionState.Error => "错误",
+            ConnectionState.Disconnected => "Disconnected",
+            ConnectionState.Connecting => "Connecting",
+            ConnectionState.Connected => "Connected",
+            ConnectionState.Reconnecting => "Reconnecting",
+            ConnectionState.Disconnecting => "Disconnecting",
+            ConnectionState.Error => "Error",
             _ => s.ToString()
         };
 
-        // ---- TCP 事件 ----
+        // ---- TCP events ----
         private async void BtnTcpConnect_Click(object sender, EventArgs e)
         {
             if (!btnTcpConnect.Enabled) return;
-            btnTcpConnect.Enabled = false; // 防二次点击
+            btnTcpConnect.Enabled = false; // Guard against a second click.
             try
             {
                 if (!int.TryParse(txtPort.Text.Trim(), out int port) || port <= 0 || port > 65535)
                 {
-                    Log("[TCP] 端口号非法");
+                    Log("[TCP] Invalid port number.");
                     btnTcpConnect.Enabled = true;
                     return;
                 }
-                ApplyConfigFromUI(); // 连接前把面板参数写入配置
+                ApplyConfigFromUI(); // Push the panel values into the configuration before connecting.
                 _tcp.Config.Host = txtIp.Text.Trim();
                 _tcp.Config.Port = port;
                 await _tcp.OpenAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                Log($"[TCP] 连接异常: {ex.Message}");
+                Log($"[TCP] Connect exception: {ex.Message}");
             }
-            // 按钮最终状态由 StateChanged 事件修正
+            // The final button state is corrected by the StateChanged event.
         }
 
         private async void BtnTcpDisconnect_Click(object sender, EventArgs e)
         {
             if (!btnTcpDisconnect.Enabled) return;
-            if (MessageBox.Show("确定要断开 TCP 连接吗？", "确认断开", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            if (MessageBox.Show("Disconnect the TCP connection?", "Confirm disconnect", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
             btnTcpDisconnect.Enabled = false;
             try { await _tcp.CloseAsync().ConfigureAwait(false); }
-            catch (Exception ex) { Log($"[TCP] 断开异常: {ex.Message}"); }
+            catch (Exception ex) { Log($"[TCP] Disconnect exception: {ex.Message}"); }
         }
 
         private async void BtnTcpSend_Click(object sender, EventArgs e)
         {
             if (!btnTcpSend.Enabled) return;
             string input = txtTcpSend.Text;
-            if (string.IsNullOrEmpty(input)) { Log("[TCP] 发送内容为空"); return; }
+            if (string.IsNullOrEmpty(input)) { Log("[TCP] Send content is empty."); return; }
             byte[] data;
             try
             {
@@ -347,18 +348,18 @@ namespace TcpSerialComm
             }
             catch (Exception ex)
             {
-                MessageBox.Show("发送内容解析失败: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Failed to parse the send content: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            btnTcpSend.Enabled = false; // 安全约定2：发送过程中禁用
+            btnTcpSend.Enabled = false; // Safety rule 2: disable the button while sending.
             try
             {
                 bool ok = await _tcp.WriteAsync(data).ConfigureAwait(false);
-                Log(ok ? $"[TCP 发送] {FormatData(data)}" : "[TCP] 发送失败（未连接或重试耗尽）");
+                Log(ok ? $"[TCP TX] {FormatData(data)}" : "[TCP] Send failed (not connected or retries exhausted).");
             }
             catch (Exception ex)
             {
-                Log($"[TCP] 发送异常: {ex.Message}");
+                Log($"[TCP] Send exception: {ex.Message}");
             }
             finally
             {
@@ -366,7 +367,7 @@ namespace TcpSerialComm
             }
         }
 
-        // ---- 串口事件 ----
+        // ---- Serial events ----
         private async void BtnSerialConnect_Click(object sender, EventArgs e)
         {
             if (!btnSerialConnect.Enabled) return;
@@ -375,42 +376,42 @@ namespace TcpSerialComm
             {
                 if (cboPort.SelectedItem == null)
                 {
-                    Log("[串口] 未选择端口");
+                    Log("[SERIAL] No port selected.");
                     btnSerialConnect.Enabled = true;
                     return;
                 }
                 if (!int.TryParse(cboBaud.SelectedItem?.ToString(), out int baud))
                 {
-                    Log("[串口] 波特率非法");
+                    Log("[SERIAL] Invalid baud rate.");
                     btnSerialConnect.Enabled = true;
                     return;
                 }
-                ApplyConfigFromUI(); // 连接前把面板参数写入配置
+                ApplyConfigFromUI(); // Push the panel values into the configuration before connecting.
                 _serial.Config.PortName = cboPort.SelectedItem.ToString();
                 _serial.Config.BaudRate = baud;
                 await _serial.OpenAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                Log($"[串口] 连接异常: {ex.Message}");
+                Log($"[SERIAL] Connect exception: {ex.Message}");
             }
         }
 
         private async void BtnSerialDisconnect_Click(object sender, EventArgs e)
         {
             if (!btnSerialDisconnect.Enabled) return;
-            if (MessageBox.Show("确定要断开串口吗？", "确认断开", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            if (MessageBox.Show("Disconnect the serial port?", "Confirm disconnect", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
             btnSerialDisconnect.Enabled = false;
             try { await _serial.CloseAsync().ConfigureAwait(false); }
-            catch (Exception ex) { Log($"[串口] 断开异常: {ex.Message}"); }
+            catch (Exception ex) { Log($"[SERIAL] Disconnect exception: {ex.Message}"); }
         }
 
         private async void BtnSerialSend_Click(object sender, EventArgs e)
         {
             if (!btnSerialSend.Enabled) return;
             string input = txtSerialSend.Text;
-            if (string.IsNullOrEmpty(input)) { Log("[串口] 发送内容为空"); return; }
+            if (string.IsNullOrEmpty(input)) { Log("[SERIAL] Send content is empty."); return; }
             byte[] data;
             try
             {
@@ -420,18 +421,18 @@ namespace TcpSerialComm
             }
             catch (Exception ex)
             {
-                MessageBox.Show("发送内容解析失败: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Failed to parse the send content: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             btnSerialSend.Enabled = false;
             try
             {
                 bool ok = await _serial.WriteAsync(data).ConfigureAwait(false);
-                Log(ok ? $"[串口 发送] {FormatData(data)}" : "[串口] 发送失败（未连接或重试耗尽）");
+                Log(ok ? $"[SERIAL TX] {FormatData(data)}" : "[SERIAL] Send failed (not connected or retries exhausted).");
             }
             catch (Exception ex)
             {
-                Log($"[串口] 发送异常: {ex.Message}");
+                Log($"[SERIAL] Send exception: {ex.Message}");
             }
             finally
             {
@@ -441,8 +442,8 @@ namespace TcpSerialComm
 
         private void BtnClearLog_Click(object sender, EventArgs e)
         {
-            // 安全约定9：清空（类删除操作）需确认
-            if (MessageBox.Show("确定要清空接收日志吗？", "确认清空", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            // Safety rule 9: clearing (a delete-like action) requires confirmation.
+            if (MessageBox.Show("Clear the receive log?", "Confirm clear", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
             _log.Clear();
             if (txtLog != null && !txtLog.IsDisposed) txtLog.Clear();
@@ -450,7 +451,7 @@ namespace TcpSerialComm
 
         private void RefreshPortList()
         {
-            // 安全约定5：无数据时显示空，不崩溃
+            // Safety rule 5: show empty and never crash when there is no data.
             try
             {
                 cboPort.Items.Clear();
@@ -458,14 +459,14 @@ namespace TcpSerialComm
             }
             catch (Exception ex)
             {
-                Log($"枚举串口失败: {ex.Message}");
+                Log($"Failed to enumerate serial ports: {ex.Message}");
             }
             if (cboPort.Items.Count > 0) cboPort.SelectedIndex = 0;
         }
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            // 安全约定6：退出前检测并关闭设备连接
+            // Safety rule 6: detect and close device connections before exiting.
             try { if (_tcp != null && _tcp.State == ConnectionState.Connected) _ = _tcp.CloseAsync(); } catch { }
             try { if (_serial != null && _serial.State == ConnectionState.Connected) _ = _serial.CloseAsync(); } catch { }
             _tcp?.Dispose();

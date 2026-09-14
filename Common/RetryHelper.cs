@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace TcpSerialComm.Common
 {
-    /// <summary>通用重试公共方法（指数退避 + 可取消），方便其它业务直接调用</summary>
+    /// <summary>Generic retry helper (configurable attempts + interval, cancellable) for reuse by other business logic.</summary>
     public static class RetryHelper
     {
         public static async Task<T> RetryAsync<T>(Func<Task<T>> func, int retryCount, int intervalMs, CancellationToken ct = default)

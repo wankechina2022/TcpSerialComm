@@ -1,6 +1,6 @@
 namespace TcpSerialComm.Communicators
 {
-    /// <summary>通信状态机</summary>
+    /// <summary>Connection state machine.</summary>
     public enum ConnectionState
     {
         Disconnected = 0,

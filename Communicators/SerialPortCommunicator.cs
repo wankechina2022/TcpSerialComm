@@ -9,9 +9,10 @@ using TcpSerialComm.Common;
 namespace TcpSerialComm.Communicators
 {
     /// <summary>
-    /// 工业级串口读写类（设计同 TcpCommunicator）。
-    /// 采用 BaseStream.ReadAsync 后台循环读取（DataReceived 事件在部分 .NET 版本不可靠、易丢/乱数据）；
-    /// 写加锁 + 最小间隔防黏连；拔线/断线自动重连 + 看门狗。
+    /// Industrial-grade serial-port read/write class (same design as TcpCommunicator).
+    /// Uses a background BaseStream.ReadAsync loop (the SerialPort.DataReceived event is unreliable on some
+    /// .NET versions and can drop or interleave data); writes are locked and spaced to prevent coalescing;
+    /// cable-pull / disconnection triggers automatic reconnect plus a watchdog.
     /// </summary>
     public sealed class SerialPortCommunicator : ICommunicator
     {
@@ -50,7 +51,7 @@ namespace TcpSerialComm.Communicators
         public SerialPortCommunicator(SerialPortCommunicatorConfig config)
         {
             _cfg = config ?? throw new ArgumentNullException(nameof(config));
-            // 注意：PortName 由调用方在 Open 前设置（运行时选择），此处不强制非空
+            // Note: PortName is chosen by the caller at runtime before Open; it is intentionally not required here.
             _frameBuilder = new FrameBuilder(_cfg.Framing, _cfg.FrameDelimiter, _cfg.MaxFrameBufferBytes);
             _heartbeatTimer = new System.Timers.Timer { AutoReset = true };
             _heartbeatTimer.Elapsed += HeartbeatTick;
@@ -82,7 +83,8 @@ namespace TcpSerialComm.Communicators
                 if (old == newState) return;
                 _state = newState;
             }
-            // 状态离开"已连接"时，唤醒所有在 ReadAsync 上等待的调用方（否则断线期间会永久挂死）
+            // When the state leaves "Connected", wake up every caller waiting inside ReadAsync();
+            // otherwise those callers would hang forever while the link is down.
             if (newState != ConnectionState.Connected) CancelPendingReaders();
             var e = new ConnectionStateChangedEventArgs(old, newState, msg);
             Post(() => StateChanged?.Invoke(this, e));
@@ -109,8 +111,9 @@ namespace TcpSerialComm.Communicators
                     RtsEnable = _cfg.RtsEnable,
                     DtrEnable = _cfg.DtrEnable
                 };
-                // 注意：SerialPort.ReadTimeout/WriteTimeout 仅对同步 Read/Write 生效，本类读循环使用
-                // BaseStream.ReadAsync 异步读，因此该超时对异步读不生效。串口读不依赖此超时（断开靠流释放/看门狗检测）。
+                // Note: SerialPort.ReadTimeout/WriteTimeout only affect the synchronous Read/Write calls. This
+                // class reads through BaseStream.ReadAsync, so those timeouts do not apply. Serial reads therefore
+                // do not rely on them; disconnection is detected via stream failure / the watchdog.
                 if (_cfg.ReadTimeout > 0) port.ReadTimeout = _cfg.ReadTimeout;
                 if (_cfg.WriteTimeout > 0) port.WriteTimeout = _cfg.WriteTimeout;
                 port.Open();
@@ -132,7 +135,7 @@ namespace TcpSerialComm.Communicators
 
         private void StartReadLoop()
         {
-            try { _masterCts?.Dispose(); } catch { }  // 释放上一次遗留的 CTS（重连/重开场景），避免泄漏
+            try { _masterCts?.Dispose(); } catch { }  // Release the CTS left over from a previous run to avoid leaking it.
             _masterCts = new CancellationTokenSource();
             var token = _masterCts.Token;
             _readTask = Task.Run(async () => { await ReadLoopAsync(token).ConfigureAwait(false); }, token);
@@ -151,13 +154,13 @@ namespace TcpSerialComm.Communicators
                     var frames = _frameBuilder.Push(buf, n);
                     foreach (var f in frames)
                     {
-                        // ===== 双通道分发（核心）=====
-                        // 【拉模式优先】若此刻有代码正在 await ReadAsync() 等待数据，
-                        // 就把这一帧直接塞给它（TryDispatchToWaiter 返回 true），不再走事件，
-                        // 确保"发指令→等回包"的调用能精确拿到对应这一帧。
+                        // ===== Dual-channel dispatch (core) =====
+                        // [Pull mode first] If some code is currently awaiting ReadAsync(), hand this frame
+                        // directly to it (TryDispatchToWaiter returns true) and skip the event, so a
+                        // "send command -> await reply" call always receives exactly its own frame.
                         if (TryDispatchToWaiter(f)) continue;
-                        // 【推模式】没有人在等 → 通过 DataReceived 事件把数据"推"给所有订阅者。
-                        // 适合设备主动上报（无需调用方干预）的场景。
+                        // [Push mode] Nobody is waiting -> publish the data to all subscribers through the
+                        // DataReceived event. Best suited to devices that report spontaneously.
                         var data = f;
                         Post(() => DataReceived?.Invoke(this, new DataReceivedEventArgs(data)));
                     }
@@ -167,7 +170,7 @@ namespace TcpSerialComm.Communicators
             catch (ObjectDisposedException) { }
             catch (IOException ex)
             {
-                // 正常关闭/释放导致的异常静默处理，不刷错误日志
+                // Exceptions caused by a normal close/dispose are swallowed instead of polluting the error log.
                 if (_closing || _disposed) return;
                 Post(() => Error?.Invoke(this, new CommunicatorErrorEventArgs(ex, "Read")));
             }
@@ -180,7 +183,7 @@ namespace TcpSerialComm.Communicators
             if (!ct.IsCancellationRequested && !_closing && _cfg.AutoReconnect)
                 BeginReconnectLoop();
             else if (!ct.IsCancellationRequested && !_closing)
-                SetState(ConnectionState.Disconnected, "读循环结束");
+                SetState(ConnectionState.Disconnected, "Read loop ended.");
         }
 
         private void StartHeartbeat()
@@ -199,7 +202,7 @@ namespace TcpSerialComm.Communicators
                 if (silent > _cfg.HeartbeatSilenceTimeoutMs)
                 {
                     Post(() => Error?.Invoke(this, new CommunicatorErrorEventArgs(
-                        new TimeoutException($"心跳看门狗：静默 {silent:0}ms 超过阈值 {_cfg.HeartbeatSilenceTimeoutMs}ms"), "Heartbeat")));
+                        new TimeoutException($"Heartbeat watchdog: silence of {silent:0} ms exceeded the threshold of {_cfg.HeartbeatSilenceTimeoutMs} ms."), "Heartbeat")));
                     ForceDisconnectForReconnect();
                     return;
                 }
@@ -217,7 +220,7 @@ namespace TcpSerialComm.Communicators
             if (_disposed || _closing) return;
             if (Interlocked.CompareExchange(ref _reconnecting, 1, 0) != 0) return;
             if (_state == ConnectionState.Connected) return;
-            SetState(ConnectionState.Reconnecting, "开始自动重连");
+            SetState(ConnectionState.Reconnecting, "Starting automatic reconnect.");
             try { _reconnectCts?.Cancel(); } catch { }
             _reconnectCts?.Dispose();
             _reconnectCts = new CancellationTokenSource();
@@ -233,7 +236,7 @@ namespace TcpSerialComm.Communicators
                 {
                     if (_cfg.MaxReconnectAttempts > 0 && _reconnectAttempts >= _cfg.MaxReconnectAttempts)
                     {
-                        SetState(ConnectionState.Disconnected, $"已达最大重连次数 {_cfg.MaxReconnectAttempts}");
+                        SetState(ConnectionState.Disconnected, $"Maximum reconnect attempts reached ({_cfg.MaxReconnectAttempts}).");
                         return;
                     }
                     int delay = CalculateBackoff(_reconnectAttempts);
@@ -246,11 +249,11 @@ namespace TcpSerialComm.Communicators
                         _reconnectAttempts = 0;
                         StartReadLoop();
                         StartHeartbeat();
-                        SetState(ConnectionState.Connected, "重连成功");
+                        SetState(ConnectionState.Connected, "Reconnected successfully.");
                         return;
                     }
                     _reconnectAttempts++;
-                    SetState(ConnectionState.Reconnecting, $"重连失败（第{_reconnectAttempts}次，{delay}ms 后重试）");
+                    SetState(ConnectionState.Reconnecting, $"Reconnect failed (attempt {_reconnectAttempts}, retrying in {delay} ms).");
                 }
             }
             finally
@@ -270,15 +273,15 @@ namespace TcpSerialComm.Communicators
         public async Task OpenAsync(CancellationToken ct = default)
         {
             ThrowIfDisposed();
-            // 安全约定3：串口不允许二次连接。用 Interlocked 原子抢锁，消除 "检查-再设" 竞态（TOCTOU），
-            // 防止两个并发 Open 都通过 IsActive 检查后建出双连接。
+            // Safety rule 3: a serial port must not be opened twice. Interlocked gives an atomic claim, removing the
+            // check-then-act race (TOCTOU) where two concurrent Open calls could both pass IsActive and build two links.
             if (Interlocked.CompareExchange(ref _openInProgress, 1, 0) != 0)
-                throw new InvalidOperationException("禁止并发打开：已有打开/连接操作正在进行中。");
+                throw new InvalidOperationException("Concurrent open is not allowed: another open/connect operation is already in progress.");
             try
             {
-            _reconnectAttempts = 0;  // 每次手动重开都重置重连计数，避免沿用上次失败计数
-            // 安全约定3：串口不允许二次连接（重复 Open 会抛异常）
-            if (IsActive) throw new InvalidOperationException("禁止二次连接：设备已连接或正在连接/重连中。");
+            _reconnectAttempts = 0;  // Every manual open resets the reconnect counter so a previous failure count is not reused.
+            // Safety rule 3: a serial port must not be opened twice (a duplicate Open throws).
+            if (IsActive) throw new InvalidOperationException("Duplicate connection is not allowed: the device is already connected, connecting or reconnecting.");
             _closing = false;
             SetState(ConnectionState.Connecting);
             bool ok = await TryConnectAsync(ct).ConfigureAwait(false);
@@ -295,8 +298,8 @@ namespace TcpSerialComm.Communicators
             }
             else
             {
-                SetState(ConnectionState.Disconnected, "连接失败");
-                throw new InvalidOperationException($"串口 {_cfg.PortName} 打开失败，且未启用自动重连。");
+                SetState(ConnectionState.Disconnected, "Connection failed.");
+                throw new InvalidOperationException($"Failed to open serial port {_cfg.PortName} and automatic reconnect is disabled.");
             }
             }
             finally
@@ -316,7 +319,7 @@ namespace TcpSerialComm.Communicators
                 _heartbeatTimer.Stop();
                 try { _reconnectCts?.Cancel(); } catch { }
                 try { _masterCts?.Cancel(); } catch { }
-                // 主动释放串口强制解除阻塞读，避免读循环在关闭时挂起
+                // Actively release the serial port to force the blocking read out, so the read loop cannot hang during close.
                 try { ForceDisconnectForReconnect(); } catch { }
                 if (_readTask != null) { try { await Task.WhenAny(_readTask, Task.Delay(2000)).ConfigureAwait(false); } catch { } }
                 if (_reconnectTask != null) { try { await Task.WhenAny(_reconnectTask, Task.Delay(2000)).ConfigureAwait(false); } catch { } }
@@ -326,7 +329,7 @@ namespace TcpSerialComm.Communicators
                 CancelPendingReaders();
                 CleanupConnectionObjects();
                 _closing = false;
-                SetState(ConnectionState.Disconnected, "已关闭");
+                SetState(ConnectionState.Disconnected, "Closed.");
             }
         }
 
@@ -334,19 +337,19 @@ namespace TcpSerialComm.Communicators
         {
             ThrowIfDisposed();
             if (data == null || data.Length == 0) return false;
-            // 安全约定4：写入前做连通性测试
+            // Safety rule 4: verify connectivity before writing.
             if (_state != ConnectionState.Connected || _port == null || !_port.IsOpen)
             {
                 if (_cfg.AutoReconnect) BeginReconnectLoop();
                 Post(() => Error?.Invoke(this, new CommunicatorErrorEventArgs(
-                    new InvalidOperationException("串口未连接，无法写入。"), "Write")));
+                    new InvalidOperationException("The serial port is not connected; the write was rejected."), "Write")));
                 return false;
             }
 
             await _writeLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                // 按当前 Framing 模式封装发送负载（Delimiter 补结束符 / LengthPrefix 加长度头 / 其它原样）
+                // Wrap the outgoing payload according to the current Framing mode (delimiter appended / length header prepended / as-is).
                 byte[] payload = _cfg.BuildSendPayload(data);
 
                 var since = (DateTime.UtcNow - _lastWriteTime).TotalMilliseconds;
@@ -358,7 +361,7 @@ namespace TcpSerialComm.Communicators
                     try
                     {
                         if (_state != ConnectionState.Connected || _port == null || !_port.IsOpen)
-                            throw new InvalidOperationException("串口已断开");
+                            throw new InvalidOperationException("The serial port has been closed.");
                         await _port.BaseStream.WriteAsync(payload, 0, payload.Length, ct).ConfigureAwait(false);
                         await _port.BaseStream.FlushAsync(ct).ConfigureAwait(false);
                         _lastWriteTime = DateTime.UtcNow;
@@ -367,7 +370,7 @@ namespace TcpSerialComm.Communicators
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex) when (attempt < _cfg.WriteRetryCount)
                     {
-                        Post(() => Error?.Invoke(this, new CommunicatorErrorEventArgs(ex, $"Write 第{attempt}次重试")));
+                        Post(() => Error?.Invoke(this, new CommunicatorErrorEventArgs(ex, $"Write retry attempt {attempt}")));
                         try { await Task.Delay(_cfg.WriteRetryIntervalMs, ct).ConfigureAwait(false); } catch { }
                     }
                     catch (Exception ex)
@@ -385,34 +388,34 @@ namespace TcpSerialComm.Communicators
             return false;
         }
 
-        /// <summary>【拉模式】等待并返回下一帧完整数据（请求-响应模式）。无数据且已断开时返回 null。可取消。</summary>
+        /// <summary>[Pull mode] Waits for and returns the next complete frame (request-response pattern). Returns null when disconnected. Cancellable.</summary>
         public async Task<byte[]> ReadAsync(CancellationToken ct = default)
         {
             ThrowIfDisposed();
             if (_state != ConnectionState.Connected) return null;
-            // 创建一个"未来才拿到数据"的承诺任务，并把自己登记进等待队列 _pendingReaders
+            // Create a promise that will be completed later, and register it in the _pendingReaders wait queue.
             var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
             lock (_pendingLock) _pendingReaders.Add(tcs);
-            // 若外部取消（ct），从等待队列移除自己，避免悬挂泄漏
+            // If the caller cancels (ct), remove ourselves from the queue to avoid a dangling entry.
             using (ct.Register(() =>
             {
                 lock (_pendingLock) { _pendingReaders.Remove(tcs); }
                 try { tcs.TrySetCanceled(); } catch { }
             }))
             {
-                // 阻塞（异步等待）直到读循环把一帧通过 TrySetResult 塞进来，本方法随即返回该帧
+                // Await (asynchronously) until the read loop pushes a frame in via TrySetResult; this method then returns it.
                 try { return await tcs.Task.ConfigureAwait(false); }
                 catch (OperationCanceledException) { return null; }
             }
         }
 
-        /// <summary>双通道核心：尝试把一帧数据交给正在【拉模式】等待的调用方（ReadAsync）。</summary>
+        /// <summary>Dual-channel core: tries to hand a frame to a caller currently waiting inside [pull-mode] ReadAsync.</summary>
         private bool TryDispatchToWaiter(byte[] frame)
         {
             TaskCompletionSource<byte[]> waiter = null;
             lock (_pendingLock)
             {
-                // 取等待队列中第一个（FIFO：先等先得）的 ReadAsync 调用
+                // Take the first waiter in the queue (FIFO: first to wait, first to be served).
                 if (_pendingReaders.Count > 0)
                 {
                     waiter = _pendingReaders[0];
@@ -421,9 +424,9 @@ namespace TcpSerialComm.Communicators
             }
             if (waiter != null)
             {
-                // 把这一帧交给它 → 对应的 ReadAsync 立即返回该帧
+                // Hand the frame over -> the corresponding ReadAsync returns it immediately.
                 waiter.TrySetResult(frame);
-                return true;   // 已交付，调用方不再走事件推送
+                return true;   // Delivered, so the caller must not fall through to the event push.
             }
             return false;
         }
@@ -442,14 +445,15 @@ namespace TcpSerialComm.Communicators
             if (_disposed) return;
             try
             {
-                // 复用 CloseAsync 完成连接关闭（含等待读/重连循环退出、释放底层流），最多等 2s。
-                // 必须在设置 _disposed 之前调用，否则 CloseAsync 会因 ThrowIfDisposed 直接抛异常。
+                // Reuse CloseAsync to tear the connection down (waiting for the read/reconnect loops and releasing the
+                // underlying stream), with a 2 s cap. It must run before _disposed is set, otherwise CloseAsync would
+                // throw straight out of ThrowIfDisposed.
                 try { CloseAsync().Wait(2000); } catch { }
             }
             finally
             {
                 _disposed = true;
-                try { CancelPendingReaders(); } catch { }   // 兜底唤醒残留等待者
+                try { CancelPendingReaders(); } catch { }   // Fallback wake-up for any remaining waiters.
                 try { CleanupConnectionObjects(); } catch { }
                 _writeLock?.Dispose();
                 _heartbeatTimer?.Dispose();

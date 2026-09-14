@@ -5,7 +5,7 @@ using System.Text;
 
 namespace TcpSerialComm.Common
 {
-    /// <summary>字节 / 文本 / 十六进制 互转公共方法</summary>
+    /// <summary>Shared conversion helpers between byte[] / text / hexadecimal strings.</summary>
     public static class ByteArrayConverter
     {
         public static byte[] FromText(string text, Encoding encoding = null)
@@ -21,8 +21,9 @@ namespace TcpSerialComm.Common
         }
 
         /// <summary>
-        /// 十六进制字符串转字节。支持 "AA BB CC" / "AABBCC" / "AA-BB" / "AA,BB"（分隔符可省略）。
-        /// 非法字符或奇数长度抛出 FormatException。
+        /// Converts a hexadecimal string to a byte array. Accepts "AA BB CC", "AABBCC",
+        /// "AA-BB" and "AA,BB" (separators are optional).
+        /// Throws FormatException on invalid characters or odd length.
         /// </summary>
         public static byte[] FromHex(string hex)
         {
@@ -35,7 +36,7 @@ namespace TcpSerialComm.Common
             }
             string s = sb.ToString();
             if (s.Length % 2 != 0)
-                throw new FormatException($"十六进制字符串长度必须为偶数，当前为 {s.Length}。");
+                throw new FormatException($"Hexadecimal string length must be even, but was {s.Length}.");
             var result = new byte[s.Length / 2];
             for (int i = 0; i < result.Length; i++)
             {

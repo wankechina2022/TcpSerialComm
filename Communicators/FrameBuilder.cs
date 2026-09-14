@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace TcpSerialComm.Communicators
 {
     /// <summary>
-    /// 接收缓冲组帧器：解决 TCP/串口“数据包黏连/拆包”问题。
-    /// 支持 Raw（原样）、Delimiter（分隔符）、LengthPrefix（2字节小端长度头）。
+    /// Inbound frame assembler: solves the "packet coalescing / fragmentation" problem on TCP and serial links.
+    /// Supports Raw (pass-through), Delimiter (delimiter based) and LengthPrefix (2-byte little-endian length header).
     /// </summary>
     internal sealed class FrameBuilder
     {
@@ -22,7 +22,7 @@ namespace TcpSerialComm.Communicators
             _maxBufferBytes = maxBufferBytes;
         }
 
-        /// <summary>推入一段原始数据，返回本次可以交付的完整帧（不足一帧的剩余部分保留）</summary>
+        /// <summary>Pushes a raw chunk and returns every complete frame that can be delivered now (a partial tail is retained).</summary>
         public List<byte[]> Push(byte[] chunk, int count)
         {
             var frames = new List<byte[]>();
@@ -31,7 +31,8 @@ namespace TcpSerialComm.Communicators
             {
                 for (int i = 0; i < count; i++) _buffer.Add(chunk[i]);
 
-                // 畸形流防御：对端迟迟不发分隔符/长度头导致缓冲无限增长时，清零重置避免 OOM
+                // Malformed-stream guard: if the peer never sends a delimiter / length header the buffer would
+                // grow without bound, so reset it to avoid OOM.
                 if (_maxBufferBytes > 0 && _buffer.Count > _maxBufferBytes)
                 {
                     _buffer.Clear();
@@ -61,7 +62,7 @@ namespace TcpSerialComm.Communicators
 
                 if (_mode == FramingMode.LengthPrefix)
                 {
-                    // 2字节小端长度头（不含头本身长度）
+                    // 2-byte little-endian length header (the header itself is not counted in the length).
                     while (_buffer.Count >= 2)
                     {
                         int len = _buffer[0] | (_buffer[1] << 8);

@@ -9,11 +9,11 @@ namespace TcpSerialComm
         [STAThread]
         static void Main()
         {
-            // 安全约定1：窗体程序只能启动一次，不能二次启动
+            // Safety rule 1: the WinForms application may only be started once; a second instance is rejected.
             using var mutex = new Mutex(true, @"Global\TcpSerialComm_SingleInstance_9F2A1C3D", out bool createdNew);
             if (!createdNew)
             {
-                MessageBox.Show("程序已经在运行，不能二次启动。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("The application is already running. Multiple instances are not allowed.", "Notice", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 

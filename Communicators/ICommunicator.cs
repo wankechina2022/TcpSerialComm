@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace TcpSerialComm.Communicators
 {
-    /// <summary>统一通信接口：TCP / 串口共用同一套调用方式，便于迁移与替换。</summary>
+    /// <summary>Unified communicator interface: TCP and Serial share the same calling convention, easing migration and substitution.</summary>
     public interface ICommunicator : IDisposable
     {
         ConnectionState State { get; }
@@ -15,7 +15,7 @@ namespace TcpSerialComm.Communicators
         Task OpenAsync(CancellationToken ct = default);
         Task CloseAsync(CancellationToken ct = default);
         Task<bool> WriteAsync(byte[] data, CancellationToken ct = default);
-        /// <summary>等待下一帧完整数据（请求-响应模式）。已断开或无数据时返回 null。可取消。</summary>
+        /// <summary>Waits for the next complete frame (request-response pattern). Returns null when disconnected or no data. Cancellable.</summary>
         Task<byte[]> ReadAsync(CancellationToken ct = default);
     }
 }
