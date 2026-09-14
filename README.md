@@ -653,7 +653,8 @@ dropped into any `net8.0` class library, WPF project or Windows service without 
 | Language | All source comments, XML documentation, exception messages, log text and UI strings are in English. |
 | Review rounds | Three review passes completed: initial implementation, second-pass hardening, and full A–F remediation. All items in [Pitfalls Already Avoided](#13-pitfalls-already-avoided) are fixed. |
 | Runtime testing | Performed by the project owner using the harness described in section 15. |
-| 2026-09-14 (b) | Added abortive RST close for TCP (`AbortTcpClient`: polite FIN then `LingerOption(true,0)` + `Close` → RST). Reworked the connection-parameter panel into 4 rows with larger gaps and increased the form height to remove label occlusion. Documented in §11. **Pending build verification by the owner.** |
+| 2026-09-14 (b) | Added abortive RST close for TCP (`AbortTcpClient`: polite FIN then `LingerOption(true,0)` + `Close` → RST). Reworked the connection-parameter panel into 4 rows with larger gaps and increased the form height to remove label occlusion. Documented in §11. |
+| 2026-09-14 (c) | UI passes: (1) widened the Serial `Baud` label/combo spacing and increased horizontal gaps on the Heartbeat row; (2) added clearance between the Serial `Port:`/`Baud:` labels and their dropdowns (Port combo `x=45→56`, Baud combo `x=205→222`) so labels no longer touch the boxes. **Pending build verification by the owner.** |
 
 ---
 

@@ -80,10 +80,10 @@ namespace TcpSerialComm
             // ---- Serial group ----
             var gbSer = new GroupBox { Text = "Serial Port", Location = new System.Drawing.Point(382, 12), Size = new System.Drawing.Size(358, 180) };
             gbSer.Controls.Add(new Label { Text = "Port:", Location = new System.Drawing.Point(12, 24), AutoSize = true });
-            cboPort = new ComboBox { Location = new System.Drawing.Point(45, 21), Size = new System.Drawing.Size(95, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            cboPort = new ComboBox { Location = new System.Drawing.Point(56, 21), Size = new System.Drawing.Size(95, 23), DropDownStyle = ComboBoxStyle.DropDownList };
             gbSer.Controls.Add(cboPort);
-            gbSer.Controls.Add(new Label { Text = "Baud:", Location = new System.Drawing.Point(150, 24), AutoSize = true });
-            cboBaud = new ComboBox { Location = new System.Drawing.Point(190, 21), Size = new System.Drawing.Size(80, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            gbSer.Controls.Add(new Label { Text = "Baud:", Location = new System.Drawing.Point(175, 24), AutoSize = true });
+            cboBaud = new ComboBox { Location = new System.Drawing.Point(222, 21), Size = new System.Drawing.Size(80, 23), DropDownStyle = ComboBoxStyle.DropDownList };
             cboBaud.Items.AddRange(new object[] { "9600", "19200", "38400", "57600", "115200" });
             cboBaud.SelectedIndex = 0;
             gbSer.Controls.Add(cboBaud);
@@ -146,14 +146,14 @@ namespace TcpSerialComm
             // Row 4: heartbeat and silence timeout.
             chkHeartbeat = new CheckBox { Text = "Heartbeat", Location = new System.Drawing.Point(12, 128), AutoSize = true, Checked = false };
             gbParam.Controls.Add(chkHeartbeat);
-            gbParam.Controls.Add(new Label { Text = "interval", Location = new System.Drawing.Point(102, 132), AutoSize = true });
-            txtHeartbeatInt = new TextBox { Text = "30000", Location = new System.Drawing.Point(162, 128), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "interval", Location = new System.Drawing.Point(115, 132), AutoSize = true });
+            txtHeartbeatInt = new TextBox { Text = "30000", Location = new System.Drawing.Point(175, 128), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtHeartbeatInt);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(220, 132), AutoSize = true });
-            gbParam.Controls.Add(new Label { Text = "Silence timeout", Location = new System.Drawing.Point(290, 132), AutoSize = true });
-            txtSilence = new TextBox { Text = "15000", Location = new System.Drawing.Point(392, 128), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(233, 132), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "Silence timeout", Location = new System.Drawing.Point(310, 132), AutoSize = true });
+            txtSilence = new TextBox { Text = "15000", Location = new System.Drawing.Point(420, 128), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtSilence);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(448, 132), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(476, 132), AutoSize = true });
 
             // ---- Log group ----
             var gbLog = new GroupBox { Text = "Receive / Log", Location = new System.Drawing.Point(12, 386), Size = new System.Drawing.Size(736, 160) };
