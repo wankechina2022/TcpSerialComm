@@ -417,7 +417,7 @@ Every transition is published through `StateChanged` and mirrored in `Message`, 
 
 ```
 Connecting -> Connected
-Connected -> Reconnecting (Starting automatic reconnect.)
+Connected -> Reconnecting (Starting automatic reconnect (unlimited retries).)
 Reconnecting -> Reconnecting (Reconnect failed (attempt 3, retrying in 4000 ms).)
 Reconnecting -> Connected (Reconnected successfully.)
 Connected -> Disconnected (Read loop ended.)
@@ -612,7 +612,7 @@ If you have no physical port, a virtual null-modem pair (such as com0com) works 
 14:32:07.002 [TCP TX] HELLO
 14:32:07.310 [TCP RX] WORLD
 14:32:11.900 [TCP ERROR/Read] IOException: Unable to read data from the transport connection
-14:32:11.903 [TCP] State: Connected -> Reconnecting (Starting automatic reconnect.)
+14:32:11.903 [TCP] State: Connected -> Reconnecting (Starting automatic reconnect (unlimited retries).)
 14:32:14.918 [TCP] State: Reconnecting -> Connected (Reconnected successfully.)
 ```
 

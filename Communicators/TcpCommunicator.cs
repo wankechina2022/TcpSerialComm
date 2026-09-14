@@ -257,7 +257,10 @@ namespace TcpSerialComm.Communicators
             if (_disposed || _closing) return;
             if (Interlocked.CompareExchange(ref _reconnecting, 1, 0) != 0) return;
             if (_state == ConnectionState.Connected) return;
-            SetState(ConnectionState.Reconnecting, "Starting automatic reconnect.");
+            string msg = _cfg.MaxReconnectAttempts == 0
+                ? "Starting automatic reconnect (unlimited retries)."
+                : $"Starting automatic reconnect (max {_cfg.MaxReconnectAttempts} retries).";
+            SetState(ConnectionState.Reconnecting, msg);
             try { _reconnectCts?.Cancel(); } catch { }
             _reconnectCts?.Dispose();
             _reconnectCts = new CancellationTokenSource();
