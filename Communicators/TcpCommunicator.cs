@@ -214,10 +214,21 @@ namespace TcpSerialComm.Communicators
                 Post(() => Error?.Invoke(this, new CommunicatorErrorEventArgs(ex, "Read")));
             }
 
-            if (!ct.IsCancellationRequested && !_closing && _cfg.AutoReconnect)
-                BeginReconnectLoop();
-            else if (!ct.IsCancellationRequested && !_closing)
-                SetState(ConnectionState.Disconnected, "Read loop ended.");
+            if (!ct.IsCancellationRequested && !_closing)
+            {
+                if (_cfg.AutoReconnect)
+                {
+                    // The link is down (peer closed gracefully or a read error). Mark it lost FIRST so any caller
+                    // awaiting ReadAsync is released, then start the reconnect loop. The state must be advanced past
+                    // "Connected" here because BeginReconnectLoop refuses to run while still flagged Connected.
+                    SetState(ConnectionState.Disconnected, "Connection lost (peer closed or read error).");
+                    BeginReconnectLoop();
+                }
+                else
+                {
+                    SetState(ConnectionState.Disconnected, "Read loop ended.");
+                }
+            }
         }
 
         private void StartHeartbeat()
@@ -256,7 +267,10 @@ namespace TcpSerialComm.Communicators
         {
             if (_disposed || _closing) return;
             if (Interlocked.CompareExchange(ref _reconnecting, 1, 0) != 0) return;
-            if (_state == ConnectionState.Connected) return;
+            // NOTE: do NOT early-return when _state == Connected. The read/write loops detect a dead link while the
+            // state is still flagged Connected (we only flip the state inside SetState), so rejecting on Connected
+            // would silently suppress every automatic reconnect. Re-entrancy is already guarded by the
+            // Interlocked above, and the caller is responsible for moving the state out of Connected before calling.
             string msg = _cfg.MaxReconnectAttempts == 0
                 ? "Starting automatic reconnect (unlimited retries)."
                 : $"Starting automatic reconnect (max {_cfg.MaxReconnectAttempts} retries).";
@@ -417,7 +431,18 @@ namespace TcpSerialComm.Communicators
                     catch (Exception ex)
                     {
                         Post(() => Error?.Invoke(this, new CommunicatorErrorEventArgs(ex, "Write")));
-                        ForceDisconnectForReconnect(); // A failed write triggers a reconnect.
+                        // The write definitively failed: the link is dead. Drop the dead stream, then start the
+                        // reconnect loop when enabled; otherwise flag the link down so the UI reflects reality.
+                        ForceDisconnectForReconnect();
+                        if (_cfg.AutoReconnect)
+                        {
+                            SetState(ConnectionState.Disconnected, "Send failed; starting reconnect.");
+                            BeginReconnectLoop();
+                        }
+                        else
+                        {
+                            SetState(ConnectionState.Disconnected, "Send failed (link is down).");
+                        }
                         return false;
                     }
                 }

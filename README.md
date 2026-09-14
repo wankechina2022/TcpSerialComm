@@ -417,11 +417,17 @@ Every transition is published through `StateChanged` and mirrored in `Message`, 
 
 ```
 Connecting -> Connected
-Connected -> Reconnecting (Starting automatic reconnect (unlimited retries).)
+Connected -> Disconnected (Connection lost (peer closed or read error).)   # read loop detected a dead link
+Disconnected -> Reconnecting (Starting automatic reconnect (unlimited retries).)
 Reconnecting -> Reconnecting (Reconnect failed (attempt 3, retrying in 4000 ms).)
-Reconnecting -> Connected (Reconnected successfully.)
-Connected -> Disconnected (Read loop ended.)
+Reconnecting -> Connected (Reconnected successfully.)                       # peer came back, link restored
+Connected -> Disconnected (Read loop ended.)                                 # AutoReconnect off
 ```
+
+> **Important:** a lost link first moves to `Disconnected` (which releases any caller blocked in `ReadAsync`)
+> and *then* to `Reconnecting`. The reconnect entry point deliberately does **not** reject a pending state of
+> `Connected` — the read/write loops only flag the link down inside `SetState`, so rejecting on `Connected`
+> would silently suppress every automatic reconnect.
 
 ---
 
@@ -521,6 +527,7 @@ These were found through iterative review; they are fixed in this code and must 
 | 11 | Object references left set after a forced disconnect | Stale objects reused on reconnect | `CleanupConnectionObjects()` / `_stream = null` on every disconnect path |
 | 12 | `var` declared inside `try` but referenced in `catch` | Compile error (CS0103) | Declarations hoisted above the `try` block |
 | 13 | `IOException` used with only `using System.IO.Ports;` in scope | Compile error (CS0246) | Added `using System.IO;` alongside `System.IO.Ports` |
+| 14 | Automatic reconnect silently suppressed after a graceful peer close | The read loop detected the dead link but the state was still `Connected`, so `BeginReconnectLoop` early-returned on `_state == Connected` — the link stayed falsely `Connected` and every `WriteAsync` failed without a reconnect | The reconnect entry point no longer rejects on `Connected`; the read/write loops flag the link down via `SetState(Disconnected)` *before* starting the reconnect loop |
 
 ---
 
@@ -655,6 +662,7 @@ dropped into any `net8.0` class library, WPF project or Windows service without 
 | Runtime testing | Performed by the project owner using the harness described in section 15. |
 | 2026-09-14 (b) | Added abortive RST close for TCP (`AbortTcpClient`: polite FIN then `LingerOption(true,0)` + `Close` → RST). Reworked the connection-parameter panel into 4 rows with larger gaps and increased the form height to remove label occlusion. Documented in §11. |
 | 2026-09-14 (c) | UI passes: (1) widened the Serial `Baud` label/combo spacing and increased horizontal gaps on the Heartbeat row; (2) added clearance between the Serial `Port:`/`Baud:` labels and their dropdowns (Port combo `x=45→56`, Baud combo `x=205→222`) so labels no longer touch the boxes. **Pending build verification by the owner.** |
+| 2026-09-14 (d) | **Critical reconnect bug fixed.** Automatic reconnect was silently suppressed: the read loop detected a dead peer but `_state` was still `Connected`, and `BeginReconnectLoop` early-returned on `_state == Connected`, so the link stayed falsely `Connected` and every `WriteAsync` failed without reconnecting. Fixed in both `TcpCommunicator` and `SerialPortCommunicator`: `BeginReconnectLoop` no longer rejects on `Connected`; the read/write loops now call `SetState(Disconnected)` *before* starting the reconnect loop. Documented in §9.3 and added to Pitfalls (#14). **Pending build verification by the owner.** |
 
 ---
 
