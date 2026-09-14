@@ -101,10 +101,24 @@ namespace TcpSerialComm.Communicators
         private void CleanupConnectionObjects()
         {
             try { _stream?.Dispose(); } catch { }
-            try { _client?.Close(); } catch { }
-            try { _client?.Dispose(); } catch { }
+            AbortTcpClient(_client);   // Abortive close (FIN then RST) so the peer frees its slot at once.
             _stream = null;
             _client = null;
+        }
+
+        /// <summary>
+        /// Closes the TcpClient with an abortive reset, which frees the peer's connection slot immediately.
+        ///  1) A polite FIN is sent first (Shutdown -> Send), so peers that handle EOF cleanly can wrap up normally.
+        ///  2) LingerOption(true, 0) is then set, and Close() emits an RST on close. The RST makes the peer kernel
+        ///     drop the connection unconditionally without depending on whether the firmware processes the EOF —
+        ///     essential for printers / code-jet devices that hold a fixed number of connection slots.
+        /// </summary>
+        private static void AbortTcpClient(TcpClient client)
+        {
+            if (client == null) return;
+            try { client.Client.Shutdown(SocketShutdown.Send); } catch { }            // 1. Polite FIN.
+            try { client.Client.LingerState = new LingerOption(true, 0); } catch { }  // 2. RST on close.
+            try { client.Close(); } catch { }  // Emits the RST and releases the slot at once.
         }
 
         private async Task<bool> TryConnectAsync(CancellationToken ct)

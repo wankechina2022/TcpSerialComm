@@ -467,6 +467,18 @@ deterministic path.
 .NET versions, so `CloseAsync` additionally releases the stream first (`ForceDisconnectForReconnect`) and
 then waits with `Task.WhenAny(task, Task.Delay(2000))`. Closing therefore cannot hang indefinitely.
 
+**Abortive close (RST) for TCP.** When the TCP socket is torn down, `TcpCommunicator` closes it with an
+abortive reset instead of a polite graceful FIN-only close:
+
+1. A polite FIN is sent first (`Socket.Shutdown(SocketShutdown.Send)`) so peers that handle EOF cleanly can
+   wrap up normally.
+2. `LingerOption(true, 0)` is then set and `TcpClient.Close()` is called, which makes the OS emit an RST on
+   close. The RST forces the peer kernel to drop the connection slot immediately — **without depending on
+   whether the firmware actually processes the EOF**. This is critical for printers / code-jet devices that
+   hold a fixed number of connection slots and would otherwise leave a slot occupied until the (ignored) FIN
+   times out. The same path runs on `Dispose` and on every reconnect teardown, so a dropped link always
+   releases its slot at once.
+
 ---
 
 ## 12. Design Decisions
@@ -641,6 +653,7 @@ dropped into any `net8.0` class library, WPF project or Windows service without 
 | Language | All source comments, XML documentation, exception messages, log text and UI strings are in English. |
 | Review rounds | Three review passes completed: initial implementation, second-pass hardening, and full A–F remediation. All items in [Pitfalls Already Avoided](#13-pitfalls-already-avoided) are fixed. |
 | Runtime testing | Performed by the project owner using the harness described in section 15. |
+| 2026-09-14 (b) | Added abortive RST close for TCP (`AbortTcpClient`: polite FIN then `LingerOption(true,0)` + `Close` → RST). Reworked the connection-parameter panel into 4 rows with larger gaps and increased the form height to remove label occlusion. Documented in §11. **Pending build verification by the owner.** |
 
 ---
 

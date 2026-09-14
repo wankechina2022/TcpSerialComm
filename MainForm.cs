@@ -45,7 +45,7 @@ namespace TcpSerialComm
         private void InitializeComponent()
         {
             Text = "TCP / Serial Read-Write Test Tool";
-            ClientSize = new System.Drawing.Size(660, 550);
+            ClientSize = new System.Drawing.Size(660, 562);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -105,63 +105,68 @@ namespace TcpSerialComm
             gbSer.Controls.Add(btnSerialSend);
 
             // ---- Common connection parameter panel ----
-            gbParam = new GroupBox { Text = "Connection parameters (editable before connecting, locked while connected)", Location = new System.Drawing.Point(12, 200), Size = new System.Drawing.Size(636, 150) };
+            gbParam = new GroupBox { Text = "Connection parameters (editable before connecting, locked while connected)", Location = new System.Drawing.Point(12, 200), Size = new System.Drawing.Size(636, 172) };
 
-            chkAutoReconnect = new CheckBox { Text = "Auto reconnect", Location = new System.Drawing.Point(12, 20), AutoSize = true, Checked = true };
+            // Row 1: reconnect settings.
+            chkAutoReconnect = new CheckBox { Text = "Auto reconnect", Location = new System.Drawing.Point(12, 22), AutoSize = true, Checked = true };
             gbParam.Controls.Add(chkAutoReconnect);
-            gbParam.Controls.Add(new Label { Text = "Max retries:", Location = new System.Drawing.Point(116, 24), AutoSize = true });
-            txtMaxRetry = new TextBox { Text = "0", Location = new System.Drawing.Point(194, 20), Size = new System.Drawing.Size(40, 23) };
+            gbParam.Controls.Add(new Label { Text = "Max retries:", Location = new System.Drawing.Point(118, 26), AutoSize = true });
+            txtMaxRetry = new TextBox { Text = "0", Location = new System.Drawing.Point(196, 22), Size = new System.Drawing.Size(40, 23) };
             gbParam.Controls.Add(txtMaxRetry);
-            gbParam.Controls.Add(new Label { Text = "(0 = unlimited)", Location = new System.Drawing.Point(238, 24), AutoSize = true });
-            gbParam.Controls.Add(new Label { Text = "Backoff:", Location = new System.Drawing.Point(350, 24), AutoSize = true });
-            txtReconnectBase = new TextBox { Text = "1000", Location = new System.Drawing.Point(404, 20), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "(0 = unlimited)", Location = new System.Drawing.Point(240, 26), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "Backoff:", Location = new System.Drawing.Point(352, 26), AutoSize = true });
+            txtReconnectBase = new TextBox { Text = "1000", Location = new System.Drawing.Point(412, 22), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtReconnectBase);
-            gbParam.Controls.Add(new Label { Text = "max", Location = new System.Drawing.Point(458, 24), AutoSize = true });
-            txtReconnectMax = new TextBox { Text = "30000", Location = new System.Drawing.Point(492, 20), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "max", Location = new System.Drawing.Point(468, 26), AutoSize = true });
+            txtReconnectMax = new TextBox { Text = "30000", Location = new System.Drawing.Point(502, 22), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtReconnectMax);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(546, 24), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(558, 26), AutoSize = true });
 
-            gbParam.Controls.Add(new Label { Text = "Frame end", Location = new System.Drawing.Point(12, 56), AutoSize = true });
-            cboDelimiter = new ComboBox { Location = new System.Drawing.Point(80, 52), Size = new System.Drawing.Size(110, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            // Row 2: framing and min write gap.
+            gbParam.Controls.Add(new Label { Text = "Frame end", Location = new System.Drawing.Point(12, 60), AutoSize = true });
+            cboDelimiter = new ComboBox { Location = new System.Drawing.Point(82, 56), Size = new System.Drawing.Size(120, 23), DropDownStyle = ComboBoxStyle.DropDownList };
             cboDelimiter.Items.AddRange(new object[] { "CRLF (\\r\\n)", "LF (\\n)", "None" });
             cboDelimiter.SelectedIndex = 0;
             gbParam.Controls.Add(cboDelimiter);
-            gbParam.Controls.Add(new Label { Text = "Min write gap", Location = new System.Drawing.Point(198, 56), AutoSize = true });
-            txtWriteMin = new TextBox { Text = "20", Location = new System.Drawing.Point(287, 52), Size = new System.Drawing.Size(42, 23) };
+            gbParam.Controls.Add(new Label { Text = "Min write gap", Location = new System.Drawing.Point(212, 60), AutoSize = true });
+            txtWriteMin = new TextBox { Text = "20", Location = new System.Drawing.Point(302, 56), Size = new System.Drawing.Size(45, 23) };
             gbParam.Controls.Add(txtWriteMin);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(333, 56), AutoSize = true });
-            gbParam.Controls.Add(new Label { Text = "Write retry", Location = new System.Drawing.Point(370, 56), AutoSize = true });
-            txtWriteRetry = new TextBox { Text = "3", Location = new System.Drawing.Point(444, 52), Size = new System.Drawing.Size(36, 23) };
-            gbParam.Controls.Add(txtWriteRetry);
-            gbParam.Controls.Add(new Label { Text = "x / gap", Location = new System.Drawing.Point(484, 56), AutoSize = true });
-            txtWriteRetryInt = new TextBox { Text = "30", Location = new System.Drawing.Point(536, 52), Size = new System.Drawing.Size(42, 23) };
-            gbParam.Controls.Add(txtWriteRetryInt);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(582, 56), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(352, 60), AutoSize = true });
 
-            chkHeartbeat = new CheckBox { Text = "Heartbeat", Location = new System.Drawing.Point(12, 82), AutoSize = true, Checked = false };
+            // Row 3: write retry.
+            gbParam.Controls.Add(new Label { Text = "Write retry", Location = new System.Drawing.Point(12, 94), AutoSize = true });
+            txtWriteRetry = new TextBox { Text = "3", Location = new System.Drawing.Point(92, 90), Size = new System.Drawing.Size(40, 23) };
+            gbParam.Controls.Add(txtWriteRetry);
+            gbParam.Controls.Add(new Label { Text = "x / gap", Location = new System.Drawing.Point(138, 94), AutoSize = true });
+            txtWriteRetryInt = new TextBox { Text = "30", Location = new System.Drawing.Point(190, 90), Size = new System.Drawing.Size(45, 23) };
+            gbParam.Controls.Add(txtWriteRetryInt);
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(240, 94), AutoSize = true });
+
+            // Row 4: heartbeat and silence timeout.
+            chkHeartbeat = new CheckBox { Text = "Heartbeat", Location = new System.Drawing.Point(12, 128), AutoSize = true, Checked = false };
             gbParam.Controls.Add(chkHeartbeat);
-            gbParam.Controls.Add(new Label { Text = "interval", Location = new System.Drawing.Point(90, 86), AutoSize = true });
-            txtHeartbeatInt = new TextBox { Text = "30000", Location = new System.Drawing.Point(139, 82), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "interval", Location = new System.Drawing.Point(92, 132), AutoSize = true });
+            txtHeartbeatInt = new TextBox { Text = "30000", Location = new System.Drawing.Point(142, 128), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtHeartbeatInt);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(193, 86), AutoSize = true });
-            gbParam.Controls.Add(new Label { Text = "Silence timeout", Location = new System.Drawing.Point(230, 86), AutoSize = true });
-            txtSilence = new TextBox { Text = "15000", Location = new System.Drawing.Point(329, 82), Size = new System.Drawing.Size(50, 23) };
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(198, 132), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "Silence timeout", Location = new System.Drawing.Point(244, 132), AutoSize = true });
+            txtSilence = new TextBox { Text = "15000", Location = new System.Drawing.Point(346, 128), Size = new System.Drawing.Size(50, 23) };
             gbParam.Controls.Add(txtSilence);
-            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(383, 86), AutoSize = true });
+            gbParam.Controls.Add(new Label { Text = "ms", Location = new System.Drawing.Point(402, 132), AutoSize = true });
 
             // ---- Log group ----
-            var gbLog = new GroupBox { Text = "Receive / Log", Location = new System.Drawing.Point(12, 360), Size = new System.Drawing.Size(636, 175) };
+            var gbLog = new GroupBox { Text = "Receive / Log", Location = new System.Drawing.Point(12, 386), Size = new System.Drawing.Size(636, 160) };
             txtLog = new TextBox
             {
                 Location = new System.Drawing.Point(12, 22),
-                Size = new System.Drawing.Size(612, 112),
+                Size = new System.Drawing.Size(612, 96),
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
                 Font = new System.Drawing.Font("Consolas", 9f)
             };
             gbLog.Controls.Add(txtLog);
-            btnClearLog = new Button { Text = "Clear log", Location = new System.Drawing.Point(534, 140), Size = new System.Drawing.Size(90, 28) };
+            btnClearLog = new Button { Text = "Clear log", Location = new System.Drawing.Point(534, 126), Size = new System.Drawing.Size(90, 28) };
             gbLog.Controls.Add(btnClearLog);
 
             Controls.Add(gbTcp);
