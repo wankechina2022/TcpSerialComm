@@ -101,7 +101,15 @@ namespace TcpSerialComm.Communicators
         private void CleanupConnectionObjects()
         {
             try { _stream?.Dispose(); } catch { }
-            AbortTcpClient(_client);   // Abortive close (FIN then RST) so the peer frees its slot at once.
+            if (_client != null)
+            {
+                if (_cfg.CloseMode == TcpCloseMode.Abortive)
+                    AbortTcpClient(_client);   // Abortive close (FIN then RST) so the peer frees its slot at once.
+                else
+                {
+                    try { _client.Close(); } catch { }  // Graceful close: normal FIN handshake, pending data is flushed.
+                }
+            }
             _stream = null;
             _client = null;
         }

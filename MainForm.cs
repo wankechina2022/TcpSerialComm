@@ -30,7 +30,7 @@ namespace TcpSerialComm
         // Common parameter panel controls.
         private GroupBox gbParam;
         private ToolTip _toolTip;
-        private CheckBox chkAutoReconnect, chkHeartbeat;
+        private CheckBox chkAutoReconnect, chkHeartbeat, chkTcpAbortiveClose;
         private TextBox txtMaxRetry, txtReconnectBase, txtReconnectMax;
         private TextBox txtWriteMin, txtWriteRetry, txtWriteRetryInt;
         private TextBox txtHeartbeatInt, txtSilence;
@@ -66,6 +66,8 @@ namespace TcpSerialComm
             gbTcp.Controls.Add(btnTcpConnect);
             gbTcp.Controls.Add(btnTcpDisconnect);
             gbTcp.Controls.Add(lblTcpStatus);
+            chkTcpAbortiveClose = new CheckBox { Text = "Abortive close (RST)", Location = new System.Drawing.Point(196, 88), AutoSize = true, Checked = true };
+            gbTcp.Controls.Add(chkTcpAbortiveClose);
 
             gbTcp.Controls.Add(new Label { Text = "Send:", Location = new System.Drawing.Point(12, 124), AutoSize = true });
             txtTcpSend = new TextBox { Location = new System.Drawing.Point(55, 121), Size = new System.Drawing.Size(155, 23) };
@@ -191,6 +193,7 @@ namespace TcpSerialComm
             _toolTip.SetToolTip(cboDelimiter, "Terminator appended to outbound frames and used to split inbound frames.");
             _toolTip.SetToolTip(txtHeartbeatInt, "Heartbeat request interval in milliseconds. Heartbeat must be enabled above.");
             _toolTip.SetToolTip(txtSilence, "If no data is received within this time, the connection is treated as dead and reconnect starts.");
+            _toolTip.SetToolTip(chkTcpAbortiveClose, "When checked (Abortive), closing sends an RST so the peer (e.g. a code-jet printer) frees its connection slot at once. Uncheck (Graceful) for a normal FIN close that flushes pending data.");
         }
 
         private void InitializeCommunicators()
@@ -329,6 +332,7 @@ namespace TcpSerialComm
                 ApplyConfigFromUI(); // Push the panel values into the configuration before connecting.
                 _tcp.Config.Host = txtIp.Text.Trim();
                 _tcp.Config.Port = port;
+                _tcp.Config.CloseMode = chkTcpAbortiveClose.Checked ? TcpCloseMode.Abortive : TcpCloseMode.Graceful;
                 await _tcp.OpenAsync().ConfigureAwait(false);
             }
             catch (Exception ex)

@@ -25,12 +25,11 @@ console tools or background jobs.
 10. [Heartbeat and Watchdog](#10-heartbeat-and-watchdog)
 11. [Thread Safety and Resource Management](#11-thread-safety-and-resource-management)
 12. [Design Decisions](#12-design-decisions)
-13. [Pitfalls Already Avoided](#13-pitfalls-already-avoided)
-14. [Safety Rules Implemented](#14-safety-rules-implemented)
-15. [WinForms Test Harness](#15-winforms-test-harness)
-16. [Known Limitations and Extension Points](#16-known-limitations-and-extension-points)
-17. [Build and Run](#17-build-and-run)
-18. [Verification Status](#18-verification-status)
+13. [Safety Rules Implemented](#13-safety-rules-implemented)
+14. [WinForms Test Harness](#14-winforms-test-harness)
+15. [Known Limitations and Extension Points](#15-known-limitations-and-extension-points)
+16. [Build and Run](#16-build-and-run)
+17. [Documentation Maintenance Policy](#17-documentation-maintenance-policy)
 
 ---
 
@@ -45,6 +44,7 @@ console tools or background jobs.
 | **Framing** | Delimiter-based, 2-byte little-endian length prefix, or raw pass-through — solves packet coalescing (`AA` + `BB` arriving as `AABB`) and fragmentation (`AABB` arriving as `AA` then `BB`). |
 | **Heartbeat watchdog** | Optional periodic keep-alive plus silence-based link-death detection. |
 | **Write protection** | `SemaphoreSlim` write lock, minimum inter-write spacing, and configurable retry with interval — prevents packet coalescing on the wire. |
+| **Selectable close mode** | `TcpCloseMode.Graceful` (FIN handshake) or `TcpCloseMode.Abortive` (RST, frees the peer's connection slot immediately) via `TcpCommunicatorConfig.CloseMode`. |
 | **Resource safety** | All unmanaged resources (`TcpClient`, `NetworkStream`, `SerialPort`, `CancellationTokenSource`, `Timer`) are disposed deterministically; close paths cannot hang indefinitely. |
 | **UI-framework agnostic** | No WinForms/WPF reference; `SynchronizationContext` support for thread-safe UI updates. |
 | **Defensive by design** | Atomic open-claim (no double-connect race), volatile cross-thread flags, bounded receive buffer, null-safe conversions. |
@@ -74,7 +74,7 @@ TcpSerialComm/
 │  ├─ ICommunicator.cs              Unified interface for both classes
 │  ├─ TcpCommunicator.cs            TCP read/write class (core)
 │  ├─ SerialPortCommunicator.cs     Serial read/write class (mirrors the TCP design)
-│  ├─ CommunicatorConfig.cs         Shared + per-transport configuration, FramingMode enum
+│  ├─ CommunicatorConfig.cs         Shared + per-transport configuration, FramingMode / TcpCloseMode enums
 │  ├─ ConnectionState.cs            State machine enum
 │  ├─ CommunicatorEventArgs.cs      Event payload types
 │  └─ FrameBuilder.cs               Inbound frame assembler (internal)
@@ -297,6 +297,7 @@ value**, so a valid configuration can be built by setting only the endpoint.
 | `KeepAliveIntervalSec` | `int` | `10` | Interval between probes. |
 | `KeepAliveRetryCount` | `int` | `3` | Failed probes before the connection is dropped. |
 | `SendBufferSize` | `int` | `8192` | Socket send buffer size. |
+| `CloseMode` | `TcpCloseMode` | `Abortive` | How the socket is torn down. `Graceful` = normal `Close()` (FIN handshake, pending data flushed); `Abortive` = RST (`LingerOption(true,0)` + `Close`) that frees the peer slot immediately. See §11. |
 
 ### 6.3 Serial port (`SerialPortCommunicatorConfig`)
 
@@ -424,10 +425,10 @@ Reconnecting -> Connected (Reconnected successfully.)                       # pe
 Connected -> Disconnected (Read loop ended.)                                 # AutoReconnect off
 ```
 
-> **Important:** a lost link first moves to `Disconnected` (which releases any caller blocked in `ReadAsync`)
-> and *then* to `Reconnecting`. The reconnect entry point deliberately does **not** reject a pending state of
-> `Connected` — the read/write loops only flag the link down inside `SetState`, so rejecting on `Connected`
-> would silently suppress every automatic reconnect.
+> **Design note:** a lost link first moves to `Disconnected` (which releases any caller blocked in
+> `ReadAsync`) and *then* to `Reconnecting`. The reconnect entry point therefore does not reject a pending
+> state of `Connected` — the read/write loops flag the link down via `SetState` immediately before
+> starting the reconnect loop, so an automatic reconnect is never suppressed.
 
 ---
 
@@ -444,7 +445,7 @@ is required.
   fail so the reconnect loop takes over.
 * This is a **one-way silence watchdog**: it detects a peer that has stopped sending. If your protocol
   requires proof of life in the other direction (send `PING`, require `PONG`), see
-  [Known Limitations](#16-known-limitations-and-extension-points).
+  [Known Limitations](#15-known-limitations-and-extension-points).
 
 ---
 
@@ -473,17 +474,25 @@ deterministic path.
 .NET versions, so `CloseAsync` additionally releases the stream first (`ForceDisconnectForReconnect`) and
 then waits with `Task.WhenAny(task, Task.Delay(2000))`. Closing therefore cannot hang indefinitely.
 
-**Abortive close (RST) for TCP.** When the TCP socket is torn down, `TcpCommunicator` closes it with an
-abortive reset instead of a polite graceful FIN-only close:
+**Abortive close (RST) for TCP.** The close behavior is controlled by `TcpCommunicatorConfig.CloseMode`
+(enum `TcpCloseMode`, default `Abortive`):
 
-1. A polite FIN is sent first (`Socket.Shutdown(SocketShutdown.Send)`) so peers that handle EOF cleanly can
-   wrap up normally.
-2. `LingerOption(true, 0)` is then set and `TcpClient.Close()` is called, which makes the OS emit an RST on
-   close. The RST forces the peer kernel to drop the connection slot immediately — **without depending on
-   whether the firmware actually processes the EOF**. This is critical for printers / code-jet devices that
-   hold a fixed number of connection slots and would otherwise leave a slot occupied until the (ignored) FIN
-   times out. The same path runs on `Dispose` and on every reconnect teardown, so a dropped link always
-   releases its slot at once.
+- **`Graceful`** — a normal `TcpClient.Close()`. The OS completes the four-way FIN handshake and flushes any
+  pending data. This is the safe default for general-purpose servers, but the peer keeps its connection slot
+  occupied until it processes the EOF.
+- **`Abortive`** — the socket is closed with an abortive reset:
+
+  1. A polite FIN is sent first (`Socket.Shutdown(SocketShutdown.Send)`) so peers that handle EOF cleanly can
+     wrap up normally.
+  2. `LingerOption(true, 0)` is then set and `TcpClient.Close()` is called, which makes the OS emit an RST on
+     close. The RST forces the peer kernel to drop the connection slot immediately — **without depending on
+     whether the firmware actually processes the EOF**. This is critical for printers / code-jet devices that
+     hold a fixed number of connection slots and would otherwise leave a slot occupied until the (ignored) FIN
+     times out.
+
+  The abortive path runs on `CloseAsync`, `Dispose`, and every reconnect teardown, so a dropped link always
+  releases its slot at once. In the test tool, the **Abortive close (RST)** checkbox in the TCP group selects
+  between the two modes before connecting.
 
 ---
 
@@ -508,30 +517,7 @@ abortive reset instead of a polite graceful FIN-only close:
 
 ---
 
-## 13. Pitfalls Already Avoided
-
-These were found through iterative review; they are fixed in this code and must not be reintroduced.
-
-| # | Pitfall | Consequence | Fix in this code |
-|---|---|---|---|
-| 1 | `CloseAsync` waits on the read task without any timeout | Application hangs on exit when a socket read is blocked | Release the stream first, then `Task.WhenAny(task, Task.Delay(2000))` |
-| 2 | `_reconnectAttempts` not reset in `OpenAsync` | Reopening after reaching the attempt limit gives up immediately | `_reconnectAttempts = 0;` at the start of `OpenAsync` |
-| 3 | Read-loop `catch` reports errors during a normal close | Misleading error spam in the log | Return silently when `_closing \|\| _disposed` |
-| 4 | `_masterCts` replaced without disposing the old one | Leaks a `CancellationTokenSource` per reconnect cycle | Dispose the previous CTS in `StartReadLoop` |
-| 5 | `ReadAsync` never woken on disconnection | Request/response callers hang forever while the link is down | `SetState` calls `CancelPendingReaders()` whenever the state leaves `Connected` |
-| 6 | `_closing` / `_disposed` not `volatile` | Heartbeat thread may not observe a close | Both fields are `volatile` |
-| 7 | `if (IsActive) throw` in `OpenAsync` is check-then-act | Two concurrent opens can both pass and create two connections | Atomic claim via `Interlocked.CompareExchange` on `_openInProgress` |
-| 8 | `Dispose` duplicated the close logic with a short 500 ms wait | Inconsistent teardown; premature disposal under load | `Dispose` reuses `CloseAsync().Wait(2000)` |
-| 9 | Heartbeat bypassed framing in `LengthPrefix` mode | Peer parsed the heartbeat incorrectly | Both `WriteAsync` and the heartbeat use `BuildSendPayload` |
-| 10 | Unbounded inbound frame buffer | Memory exhaustion on a malformed stream | `MaxFrameBufferBytes` (default 1 MB) clears the buffer when exceeded |
-| 11 | Object references left set after a forced disconnect | Stale objects reused on reconnect | `CleanupConnectionObjects()` / `_stream = null` on every disconnect path |
-| 12 | `var` declared inside `try` but referenced in `catch` | Compile error (CS0103) | Declarations hoisted above the `try` block |
-| 13 | `IOException` used with only `using System.IO.Ports;` in scope | Compile error (CS0246) | Added `using System.IO;` alongside `System.IO.Ports` |
-| 14 | Automatic reconnect silently suppressed after a graceful peer close | The read loop detected the dead link but the state was still `Connected`, so `BeginReconnectLoop` early-returned on `_state == Connected` — the link stayed falsely `Connected` and every `WriteAsync` failed without a reconnect | The reconnect entry point no longer rejects on `Connected`; the read/write loops flag the link down via `SetState(Disconnected)` *before* starting the reconnect loop |
-
----
-
-## 14. Safety Rules Implemented
+## 13. Safety Rules Implemented
 
 The library and harness implement the following industrial development conventions end to end.
 
@@ -565,16 +551,16 @@ The library and harness implement the following industrial development conventio
 
 ---
 
-## 15. WinForms Test Harness
+## 14. WinForms Test Harness
 
 `MainForm` is a deliberately minimal shell for exercising the two classes. It is **not** the deliverable —
 the classes are.
 
-### 15.1 Layout
+### 14.1 Layout
 
 | Region | Contents |
 |---|---|
-| **TCP Client** | IP, Port, Connect, Disconnect, state label, send box with Text/Hex selector, Send |
+| **TCP Client** | IP, Port, Connect, Disconnect, state label, **Abortive close (RST)** selector, send box with Text/Hex selector, Send |
 | **Serial Port** | port list, baud rate, Connect, Disconnect, state label, send box with Text/Hex selector, Send |
 | **Connection parameters** | auto-reconnect, max retries (`0 = unlimited`), backoff base and max, frame terminator (CRLF / LF / None), minimum write gap, write retries and interval, heartbeat and interval, silence timeout |
 | **Receive / Log** | Timestamped log of every state change, frame and error, plus Send/Receive entries (`[TCP RX]`, `[TCP TX]`, `[SERIAL RX]`, …) |
@@ -582,7 +568,7 @@ the classes are.
 The parameter panel is applied when you click **Connect**, so common settings can be changed without
 editing code, and it locks automatically once a device is active.
 
-### 15.2 Testing TCP
+### 14.2 Testing TCP
 
 Start a listener on the same machine, for example with Python:
 
@@ -602,16 +588,18 @@ Suggested checks:
 4. **Reconnection** — restart the listener; the state returns to `Connected` automatically.
 5. **Heartbeat** — enable heartbeat, set the interval to 5000 ms and the silence timeout to 3000 ms, then
    stop the peer from sending; a watchdog `TimeoutException` appears and reconnection starts.
-6. **Exit** — close the window while connected; no exception, no lingering process.
+6. **Close mode** — with **Abortive close (RST)** checked, the peer sees an RST on disconnect (its slot is
+   freed immediately); unchecked, the peer sees a normal FIN close.
+7. **Exit** — close the window while connected; no exception, no lingering process.
 
-### 15.3 Testing serial
+### 14.3 Testing serial
 
 Use a USB-to-serial adapter with TX looped back to RX (or two adapters cross-connected: TX↔RX, RX↔TX,
 GND↔GND). With a loopback, whatever you send comes back as a received frame.
 
 If you have no physical port, a virtual null-modem pair (such as com0com) works equally well.
 
-### 15.4 Reading the log
+### 14.4 Reading the log
 
 ```
 14:32:05.118 [TCP] State: Disconnected -> Connecting
@@ -625,7 +613,7 @@ If you have no physical port, a virtual null-modem pair (such as com0com) works 
 
 ---
 
-## 16. Known Limitations and Extension Points
+## 15. Known Limitations and Extension Points
 
 | Item | Notes |
 |---|---|
@@ -638,7 +626,7 @@ If you have no physical port, a virtual null-modem pair (such as com0com) works 
 
 ---
 
-## 17. Build and Run
+## 16. Build and Run
 
 ```bash
 cd TcpSerialComm
@@ -652,25 +640,13 @@ dropped into any `net8.0` class library, WPF project or Windows service without 
 
 ---
 
-## 18. Verification Status
-
-| Item | Status |
-|---|---|
-| Compilation | `dotnet build -c Release` passes with no errors or warnings (confirmed by the project owner). |
-| Language | All source comments, XML documentation, exception messages, log text and UI strings are in English. |
-| Review rounds | Three review passes completed: initial implementation, second-pass hardening, and full A–F remediation. All items in [Pitfalls Already Avoided](#13-pitfalls-already-avoided) are fixed. |
-| Runtime testing | Performed by the project owner using the harness described in section 15. |
-| 2026-09-14 (b) | Added abortive RST close for TCP (`AbortTcpClient`: polite FIN then `LingerOption(true,0)` + `Close` → RST). Reworked the connection-parameter panel into 4 rows with larger gaps and increased the form height to remove label occlusion. Documented in §11. **Verified by the owner.** |
-| 2026-09-14 (c) | UI passes: (1) widened the Serial `Baud` label/combo spacing and increased horizontal gaps on the Heartbeat row; (2) added clearance between the Serial `Port:`/`Baud:` labels and their dropdowns (Port combo `x=45→56`, Baud combo `x=205→222`) so labels no longer touch the boxes. **Verified by the owner.** |
-| 2026-09-14 (d) | **Critical reconnect bug fixed.** Automatic reconnect was silently suppressed: the read loop detected a dead peer but `_state` was still `Connected`, and `BeginReconnectLoop` early-returned on `_state == Connected`, so the link stayed falsely `Connected` and every `WriteAsync` failed without reconnecting. Fixed in both `TcpCommunicator` and `SerialPortCommunicator`: `BeginReconnectLoop` no longer rejects on `Connected`; the read/write loops now call `SetState(Disconnected)` *before* starting the reconnect loop. Documented in §9.3 and added to Pitfalls (#14). **Verified by the owner.** |
-
----
-
-## 19. Documentation Maintenance Policy
+## 17. Documentation Maintenance Policy
 
 > **Rule: no change ships without a matching README update.**
 > Every code change, feature upgrade or bug fix must be reflected in this document in the same commit.
 > A change that is not documented here is considered incomplete.
+> This document records the **final implementation only** — it contains no dated change history or
+> process narrative; when behavior changes, update the affected sections in place.
 
 When you modify the project, update the matching location:
 
@@ -678,12 +654,10 @@ When you modify the project, update the matching location:
 |---|---|
 | Public API (new method, renamed parameter, changed signature) | [Section 4 — Class Reference](#4-class-reference) (interface signatures and per-member tables) |
 | Any configuration property added, changed or removed | [Section 6 — Configuration Reference](#6-configuration-reference) (all three tables, incl. default values and units) |
-| A pitfall you just hit and fixed | [Section 13 — Pitfalls Already Avoided](#13-pitfalls-already-avoided) (append a numbered row) |
-| Behavior of reconnection, heartbeat, framing, timeouts, state machine | The corresponding section (7/8/9/10) plus [Section 12 — Design Decisions](#12-design-decisions) if the rationale changed |
-| A known limitation that has now been fixed | [Section 16 — Known Limitations](#16-known-limitations-and-extension-points) — remove it or mark it as fixed; never leave a stale entry |
-| UI strings, log prefixes or harness behavior | [Section 15 — WinForms Test Harness](#15-winforms-test-harness) (including the sample log output) |
-| A completed build/verify cycle | [Section 18 — Verification Status](#18-verification-status) (add a dated row) |
-| Safety rules or project conventions | [Section 14 — Safety Rules Implemented](#14-safety-rules-implemented) |
+| Behavior of reconnection, heartbeat, framing, timeouts, close mode, state machine | The corresponding section (7/8/9/10/11) plus [Section 12 — Design Decisions](#12-design-decisions) if the rationale changed |
+| A known limitation that has now been fixed | [Section 15 — Known Limitations](#15-known-limitations-and-extension-points) — remove it or mark it as fixed; never leave a stale entry |
+| UI strings, log prefixes or harness behavior | [Section 14 — WinForms Test Harness](#14-winforms-test-harness) (including the sample log output) |
+| Safety rules or project conventions | [Section 13 — Safety Rules Implemented](#13-safety-rules-implemented) |
 
 **Three copies must stay identical.** This project is also published as a reusable template:
 
@@ -699,9 +673,9 @@ D:\Connect\TcpSerialComm\               <- source of truth
   README.md
 ```
 
-After editing the source of truth, copy the `.cs` files and `README.md` into the skill folder and append
-a dated entry to the skill's `SKILL.md` → *Verification Status* section. The skill is the artefact that
-gets reused in future projects; a stale copy there propagates the mistake a second time.
+After editing the source of truth, copy the `.cs` files and `README.md` into the skill folder. The skill
+is the artefact that gets reused in future projects; a stale copy there propagates the mistake a second
+time.
 
 **Language rule.** Everything in this project is English — source comments, XML documentation, exception
 messages, log text, UI strings and this document. Do not introduce Chinese text into any `.cs` file.

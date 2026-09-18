@@ -13,6 +13,15 @@ namespace TcpSerialComm.Communicators
         LengthPrefix
     }
 
+    /// <summary>How the underlying TcpClient is torn down when the connection closes.</summary>
+    public enum TcpCloseMode
+    {
+        /// <summary>Graceful close: a normal Close() lets the OS finish the four-way FIN handshake and flush pending data. Safe default for general use.</summary>
+        Graceful = 0,
+        /// <summary>Abortive close: sends an RST (LingerOption(true,0) + Close). The peer kernel drops the connection immediately and frees its slot without waiting for application-level EOF handling. Required for printers / code-jet devices that hold a fixed number of connection slots.</summary>
+        Abortive
+    }
+
     /// <summary>Common configuration shared by TCP and Serial communicators. Every option has a default value.</summary>
     public abstract class CommunicatorConfig
     {
@@ -101,6 +110,12 @@ namespace TcpSerialComm.Communicators
         public int KeepAliveRetryCount { get; set; } = 3;
         /// <summary>Socket send buffer size (bytes).</summary>
         public int SendBufferSize { get; set; } = 8192;
+        /// <summary>
+        /// Close behavior. Graceful = normal Close() (FIN, data flushed); Abortive = RST (LingerOption(true,0)+Close)
+        /// that drops the connection at once so the peer frees its slot immediately. Defaults to Abortive to match
+        /// printer / code-jet device requirements where the remote must release the slot without handling EOF.
+        /// </summary>
+        public TcpCloseMode CloseMode { get; set; } = TcpCloseMode.Abortive;
     }
 
     /// <summary>Serial-port-specific configuration.</summary>
