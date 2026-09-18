@@ -13,23 +13,34 @@ console tools or background jobs.
 
 ## Table of Contents
 
-1. [Key Features](#1-key-features)
-2. [Requirements](#2-requirements)
-3. [Repository Layout](#3-repository-layout)
-4. [Class Reference](#4-class-reference)
-5. [Quick Start](#5-quick-start)
-6. [Configuration Reference](#6-configuration-reference)
-7. [Reading Data: The Dual-Channel Model](#7-reading-data-the-dual-channel-model)
-8. [Framing: Solving Coalescing and Fragmentation](#8-framing-solving-coalescing-and-fragmentation)
-9. [Disconnection Detection and Auto-Reconnect](#9-disconnection-detection-and-auto-reconnect)
-10. [Heartbeat and Watchdog](#10-heartbeat-and-watchdog)
-11. [Thread Safety and Resource Management](#11-thread-safety-and-resource-management)
-12. [Design Decisions](#12-design-decisions)
-13. [Safety Rules Implemented](#13-safety-rules-implemented)
-14. [WinForms Test Harness](#14-winforms-test-harness)
-15. [Known Limitations and Extension Points](#15-known-limitations-and-extension-points)
-16. [Build and Run](#16-build-and-run)
-17. [Documentation Maintenance Policy](#17-documentation-maintenance-policy)
+1. [Screenshots](#screenshots)
+2. [Key Features](#1-key-features)
+3. [Requirements](#2-requirements)
+4. [Repository Layout](#3-repository-layout)
+5. [Class Reference](#4-class-reference)
+6. [Quick Start](#5-quick-start)
+7. [Configuration Reference](#6-configuration-reference)
+8. [Reading Data: The Dual-Channel Model](#7-reading-data-the-dual-channel-model)
+9. [Framing: Solving Coalescing and Fragmentation](#8-framing-solving-coalescing-and-fragmentation)
+10. [Disconnection Detection and Auto-Reconnect](#9-disconnection-detection-and-auto-reconnect)
+11. [Heartbeat and Watchdog](#10-heartbeat-and-watchdog)
+12. [Thread Safety and Resource Management](#11-thread-safety-and-resource-management)
+13. [Design Decisions](#12-design-decisions)
+14. [Safety Rules Implemented](#13-safety-rules-implemented)
+15. [WinForms Test Harness](#14-winforms-test-harness)
+16. [Known Limitations and Extension Points](#15-known-limitations-and-extension-points)
+17. [Build and Run](#16-build-and-run)
+18. [Documentation Maintenance Policy](#17-documentation-maintenance-policy)
+
+---
+
+## Screenshots
+
+> Screenshot files live next to this README and are committed together with the source code.
+
+### Main window — TCP client and serial port in one shell
+
+<img src="TCPClientAndComTool.png" width="820" alt="Main window: TCP client, serial port, connection parameters and receive log">
 
 ---
 
@@ -70,6 +81,7 @@ TcpSerialComm/
 ├─ Program.cs                       Entry point, single-instance Mutex guard
 ├─ MainForm.cs                      WinForms test harness (UI text fully in English)
 ├─ README.md                        This document
+├─ TCPClientAndComTool.png          Screenshot of the test harness (referenced by this README)
 ├─ Communicators/                   ← the reusable library
 │  ├─ ICommunicator.cs              Unified interface for both classes
 │  ├─ TcpCommunicator.cs            TCP read/write class (core)
@@ -659,23 +671,9 @@ When you modify the project, update the matching location:
 | UI strings, log prefixes or harness behavior | [Section 14 — WinForms Test Harness](#14-winforms-test-harness) (including the sample log output) |
 | Safety rules or project conventions | [Section 13 — Safety Rules Implemented](#13-safety-rules-implemented) |
 
-**Three copies must stay identical.** This project is also published as a reusable template:
-
-```
-D:\Connect\TcpSerialComm\               <- source of truth
-  Communicators\*.cs
-  Common\*.cs
-  README.md
-
-~/.workbuddy/skills/dotnet-std-communicator/   <- reusable copy
-  template/Communicators\*.cs
-  template/Common\*.cs
-  README.md
-```
-
-After editing the source of truth, copy the `.cs` files and `README.md` into the skill folder. The skill
-is the artefact that gets reused in future projects; a stale copy there propagates the mistake a second
-time.
+**Reuse rule.** `Communicators/` and `Common/` are self-contained and are meant to be copied as-is into
+other projects; keep the two folders and this document in sync when a change is made here, so downstream
+copies never inherit a stale behaviour.
 
 **Language rule.** Everything in this project is English — source comments, XML documentation, exception
 messages, log text, UI strings and this document. Do not introduce Chinese text into any `.cs` file.
